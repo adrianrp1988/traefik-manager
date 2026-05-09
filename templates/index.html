@@ -659,14 +659,28 @@ function setProtocol(proto) {
     }
 }
 
+function setHttpRuleMode(mode) {
+    const isAdv = mode === 'advanced';
+    const simpleBtn = document.getElementById('httpModeSimpleBtn');
+    const advBtn    = document.getElementById('httpModeAdvancedBtn');
+    const simpleFields = document.getElementById('httpSimpleFields');
+    const advFields    = document.getElementById('httpAdvancedFields');
+    if (simpleBtn) { simpleBtn.classList.toggle('active-http', !isAdv); simpleBtn.classList.toggle('active-http', !isAdv); }
+    if (advBtn)    { advBtn.classList.toggle('active-http', isAdv); }
+    if (simpleFields) simpleFields.style.display = isAdv ? 'none' : '';
+    if (advFields)    advFields.style.display    = isAdv ? '' : 'none';
+    if (!isAdv) { const el = document.getElementById('httpRule'); if (el) el.value = ''; }
+}
+
 function openModal() {
     document.getElementById('isEdit').value = 'false';
     document.getElementById('modalTitle').innerText = 'Add Route';
     document.getElementById('originalId').value = '';
-    ['serviceName','subdomain','targetIp','targetPort','middlewares','tcpRule'].forEach(id => {
+    ['serviceName','subdomain','targetIp','targetPort','middlewares','tcpRule','httpRule'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.value = '';
     });
+    setHttpRuleMode('simple');
     _initDomainChips([]);
     _initEntrypointChips('http', []);
     _initEntrypointChips('tcp', []);
@@ -1244,6 +1258,13 @@ function handleEdit(btn) {
 
     if (proto === 'http') {
         let rule = app.rule || '';
+        const isSimpleRule = /^(Host\(`[^`]+`\)(\s*\|\|\s*Host\(`[^`]+`\))*)$/.test(rule.trim());
+        if (!isSimpleRule && rule) {
+            setHttpRuleMode('advanced');
+            document.getElementById('httpRule').value = rule;
+        } else {
+            setHttpRuleMode('simple');
+        }
         let subdomain = '';
         const hostMatches = [...rule.matchAll(/Host\(`([^`]+)`\)/g)].map(m => m[1]);
         const matchedDomains = [];

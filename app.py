@@ -19,7 +19,7 @@ from io import StringIO
 from cryptography.fernet import Fernet, InvalidToken
 
 GITHUB_REPO  = "chr0nzz/traefik-manager"
-APP_VERSION  = "1.0.4"
+APP_VERSION  = "1.1.0"
 
 
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
@@ -2647,6 +2647,7 @@ def save_entry():
         is_edit        = request.form.get('isEdit') == 'true'
         original_id    = request.form.get('originalId', '')
         tcp_rule       = request.form.get('tcpRule', '').strip()
+        http_rule      = request.form.get('httpRule', '').strip()
         scheme         = request.form.get('scheme', 'http').strip().lower()
         pass_host      = request.form.get('passHostHeader') == 'true'
         _all_eps       = request.form.getlist('entryPoints')
@@ -2701,15 +2702,18 @@ def save_entry():
                     del s['services'][old_svc]
 
         if protocol == 'http':
-            selected_domains = request.form.getlist('domains') or [domain]
-            if subdomain and '.' in subdomain:
-                rule = f"Host(`{subdomain}`)"
-            elif subdomain:
-                hosts = [f"Host(`{subdomain}.{d}`)" for d in selected_domains]
-                rule  = " || ".join(hosts)
+            if http_rule:
+                rule = http_rule
             else:
-                hosts = [f"Host(`{d}`)" for d in selected_domains]
-                rule  = " || ".join(hosts)
+                selected_domains = request.form.getlist('domains') or [domain]
+                if subdomain and '.' in subdomain:
+                    rule = f"Host(`{subdomain}`)"
+                elif subdomain:
+                    hosts = [f"Host(`{subdomain}.{d}`)" for d in selected_domains]
+                    rule  = " || ".join(hosts)
+                else:
+                    hosts = [f"Host(`{d}`)" for d in selected_domains]
+                    rule  = " || ".join(hosts)
             target_url = target_ip if target_ip.startswith('http') else f"{scheme}://{target_ip}:{target_port}"
             mws        = [m.strip() for m in middlewares_in.split(',')] if middlewares_in else []
             insecure   = request.form.get('insecureSkipVerify') == 'true'
