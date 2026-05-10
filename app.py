@@ -2667,7 +2667,8 @@ def save_entry():
         resolvers      = [r.strip() for r in settings['cert_resolver'].split(',') if r.strip()]
         _all_resolvers    = request.form.getlist('certResolver')
         cert_resolver_raw = (_all_resolvers[0] if _all_resolvers else '').strip()
-        cert_resolver     = '' if (cert_resolver_raw in ('__none__', 'none')) else (cert_resolver_raw or (resolvers[0] if resolvers else ''))
+        no_tls            = cert_resolver_raw == '__disabled__'
+        cert_resolver     = '' if (cert_resolver_raw in ('__none__', 'none', '__disabled__')) else (cert_resolver_raw or (resolvers[0] if resolvers else ''))
         use_tls_tcp       = request.form.get('useTls') == 'true'
         tcp_cert_raw      = (_all_resolvers[1] if len(_all_resolvers) > 1 else '').strip()
         tcp_cert_resolver = '' if (tcp_cert_raw in ('__none__', 'none')) else (tcp_cert_raw or (resolvers[0] if resolvers else ''))
@@ -2719,8 +2720,9 @@ def save_entry():
             insecure   = request.form.get('insecureSkipVerify') == 'true'
             config.setdefault('http', {}).setdefault('routers', {})
             config['http'].setdefault('services', {})
-            tls_val = {'certResolver': cert_resolver} if cert_resolver else {}
-            r = {'rule': rule, 'entryPoints': http_eps, 'tls': tls_val, 'service': service_name}
+            r = {'rule': rule, 'entryPoints': http_eps, 'service': service_name}
+            if not no_tls:
+                r['tls'] = {'certResolver': cert_resolver} if cert_resolver else {}
             if mws:
                 r['middlewares'] = mws
             lb = {'servers': [{'url': target_url}]}

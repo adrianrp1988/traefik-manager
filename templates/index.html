@@ -714,7 +714,7 @@ function openModal() {
     document.getElementById('useTls') && (document.getElementById('useTls').checked = false);
     toggleTcpCertResolver(false);
     const crHttp = document.getElementById('certResolver');
-    if (crHttp && availableCertResolvers.length > 0) crHttp.value = availableCertResolvers[0];
+    if (crHttp) crHttp.value = availableCertResolvers.length > 0 ? availableCertResolvers[0] : '__disabled__';
     const crTcp = document.getElementById('certResolverTcp');
     if (crTcp && availableCertResolvers.length > 0) crTcp.value = availableCertResolvers[0];
     setProtocol('http');
@@ -1319,7 +1319,11 @@ function handleEdit(btn) {
         document.getElementById('scheme').value = targetScheme;
         document.getElementById('passHostHeader').checked = app.passHostHeader !== false;
         const crHttp = document.getElementById('certResolver');
-        if (crHttp && app.certResolver) crHttp.value = app.certResolver;
+        if (crHttp) {
+            if (!app.tls && app.tls !== false) crHttp.value = '__disabled__';
+            else if (app.certResolver) crHttp.value = app.certResolver;
+            else crHttp.value = '__none__';
+        }
         const insecureChk = document.getElementById('insecureSkipVerify');
         if (insecureChk) insecureChk.checked = !!app.insecureSkipVerify;
 

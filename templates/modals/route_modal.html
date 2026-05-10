@@ -124,6 +124,7 @@
                     <div>
                         <label>Cert Resolver</label>
                         <select name="certResolver" id="certResolver" class="input-field">
+                            <option value="__disabled__">No TLS</option>
                             {% for r in cert_resolvers %}
                             <option value="{{ r }}">{{ r }}</option>
                             {% endfor %}
