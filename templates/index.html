@@ -501,6 +501,31 @@ function switchTab(tab) {
 }
 
 // ── Shared provider card renderer (matches Routes tab card style) ─────────────
+function renderProviderMiddlewareSection(middlewares, containerId) {
+    const el = document.getElementById(containerId);
+    if (!el) return;
+    if (!middlewares || middlewares.length === 0) { el.innerHTML = ''; return; }
+    const cards = middlewares.map(mw => {
+        const name = (mw.name || '').split('@')[0];
+        const type = mw.type || '';
+        const st   = (mw.status || '').toLowerCase();
+        const dot  = st === 'enabled' ? 'status-online' : (st === 'disabled' || st === 'error') ? 'status-offline' : 'status-unknown';
+        return `<div class="card p-3 flex items-center gap-3">
+            <span class="status-dot ${dot}" style="flex-shrink:0"></span>
+            <div class="min-w-0 flex-1">
+                <div class="text-sm font-semibold font-mono truncate" style="color:var(--text)" title="${_esc(name)}">${_esc(name)}</div>
+                ${type ? `<div class="text-xs mt-0.5" style="color:var(--muted)">${_esc(type)}</div>` : ''}
+            </div>
+        </div>`;
+    }).join('');
+    el.innerHTML = `<div class="mt-6 pt-4" style="border-top:1px solid var(--border)">
+        <div class="text-xs font-semibold uppercase tracking-wide mb-3 flex items-center gap-2" style="color:var(--muted)">
+            <i class="ph-bold ph-plugs-connected"></i> Middlewares <span class="font-normal">(${middlewares.length})</span>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">${cards}</div>
+    </div>`;
+}
+
 function renderProviderCard(r, opts = {}) {
     const proto = (r._proto || 'HTTP').toUpperCase();
     const name  = (r.name  || '').split('@')[0];
