@@ -1306,10 +1306,11 @@ def traefik_api_get_all(path):
         return None
     results = []
     page = 1
+    per_page = 1000
     try:
         while True:
             sep = '&' if '?' in path else '?'
-            resp = requests.get(f"{base_url}{path}{sep}page={page}&per_page=100", timeout=5)
+            resp = requests.get(f"{base_url}{path}{sep}page={page}&per_page={per_page}", timeout=10)
             if resp.status_code != 200:
                 break
             data = resp.json()
