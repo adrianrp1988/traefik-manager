@@ -1298,6 +1298,32 @@ def traefik_api_get(path):
         logger.debug(f"Traefik API unavailable: {e}")
     return None
 
+def traefik_api_get_all(path):
+    settings = load_settings()
+    base_url = settings['traefik_api_url']
+    if not _safe_api_url(base_url):
+        logger.error("traefik_api_url failed safety check")
+        return None
+    results = []
+    page = 1
+    try:
+        while True:
+            sep = '&' if '?' in path else '?'
+            resp = requests.get(f"{base_url}{path}{sep}page={page}&per_page=100", timeout=5)
+            if resp.status_code != 200:
+                break
+            data = resp.json()
+            if not data:
+                break
+            results.extend(data)
+            next_page = resp.headers.get('X-Next-Page', '').strip()
+            if not next_page:
+                break
+            page = int(next_page)
+    except Exception as e:
+        logger.debug(f"Traefik API unavailable: {e}")
+    return results or None
+
 @app.route('/api/traefik/overview')
 @login_required
 def api_overview():
@@ -1307,26 +1333,26 @@ def api_overview():
 @login_required
 def api_routers():
     return jsonify({
-        'http': traefik_api_get('/api/http/routers') or [],
-        'tcp':  traefik_api_get('/api/tcp/routers')  or [],
-        'udp':  traefik_api_get('/api/udp/routers')  or [],
+        'http': traefik_api_get_all('/api/http/routers') or [],
+        'tcp':  traefik_api_get_all('/api/tcp/routers')  or [],
+        'udp':  traefik_api_get_all('/api/udp/routers')  or [],
     })
 
 @app.route('/api/traefik/services')
 @login_required
 def api_services():
     return jsonify({
-        'http': traefik_api_get('/api/http/services') or [],
-        'tcp':  traefik_api_get('/api/tcp/services')  or [],
-        'udp':  traefik_api_get('/api/udp/services')  or [],
+        'http': traefik_api_get_all('/api/http/services') or [],
+        'tcp':  traefik_api_get_all('/api/tcp/services')  or [],
+        'udp':  traefik_api_get_all('/api/udp/services')  or [],
     })
 
 @app.route('/api/traefik/middlewares')
 @login_required
 def api_middlewares():
     return jsonify({
-        'http': traefik_api_get('/api/http/middlewares') or [],
-        'tcp':  traefik_api_get('/api/tcp/middlewares')  or [],
+        'http': traefik_api_get_all('/api/http/middlewares') or [],
+        'tcp':  traefik_api_get_all('/api/tcp/middlewares')  or [],
     })
 
 @app.route('/api/manager/router-names')
@@ -2346,7 +2372,7 @@ def _build_middlewares(config, config_file=''):
 def _traefik_service_url_map():
     url_map = {}
     for proto, addr_key in (('http', 'url'), ('tcp', 'address'), ('udp', 'address')):
-        for svc in traefik_api_get(f'/api/{proto}/services') or []:
+        for svc in traefik_api_get_all(f'/api/{proto}/services') or []:
             key = _svc_key(svc.get('name', ''))
             servers = svc.get('loadBalancer', {}).get('servers', [])
             if servers and addr_key in servers[0]:
@@ -2358,7 +2384,7 @@ def _build_external_routes(include_internal=False):
     svc_urls = _traefik_service_url_map()
     routes = []
     for proto in ('http', 'tcp', 'udp'):
-        data = traefik_api_get(f'/api/{proto}/routers') or []
+        data = traefik_api_get_all(f'/api/{proto}/routers') or []
         for r in data:
             provider = r.get('provider', '')
             if not provider or provider == 'file':
