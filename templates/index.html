@@ -890,6 +890,30 @@ async function refreshRoutes() {
     } catch(e) {}
 }
 
+async function pingAllRoutes() {
+    const cards = Array.from(document.querySelectorAll('.route-card')).filter(c => c.dataset.protocol === 'http');
+    const pingable = cards.filter(c => {
+        const d = (c.dataset.domains || '').split('|').find(d => d && !d.includes('{') && !d.includes('*'));
+        return !!d;
+    });
+    if (!pingable.length) { showToast('No pingable HTTP routes found', 'info'); return; }
+    showToast(`Pinging ${pingable.length} HTTP route${pingable.length > 1 ? 's' : ''}…`, 'success');
+    for (const card of pingable) {
+        const domain = (card.dataset.domains || '').split('|').find(d => d && !d.includes('{') && !d.includes('*'));
+        const statusEl = card.querySelector('.status-dot');
+        if (statusEl) { statusEl.className = 'status-dot status-checking'; statusEl.title = 'Pinging…'; }
+        try {
+            const data = await fetch(`/api/ping?url=https://${encodeURIComponent(domain)}`).then(r => r.json());
+            if (statusEl) {
+                statusEl.className = data.ok ? 'status-dot status-online' : 'status-dot status-offline';
+                statusEl.title = data.ok ? `Online · ${data.latency_ms}ms (${data.status_code})` : `Unreachable${data.error ? ': ' + data.error : ''}`;
+            }
+        } catch(e) {
+            if (statusEl) { statusEl.className = 'status-dot status-unknown'; statusEl.title = 'Ping failed'; }
+        }
+    }
+}
+
 function showAddApiKeyForm() {
     document.getElementById('apikeyAddForm').classList.remove('hidden');
     document.getElementById('apikeyDeviceName').focus();
@@ -1561,12 +1585,16 @@ async function loadOverviewStats() {
                 
                 const proto = card.dataset.protocol;
                 if (proto === 'http') {
-                    const domainEl = card.querySelector('[style*="58a6ff"]');
-                    const domain = domainEl ? domainEl.textContent.trim() : '';
-                    if (domain && !domain.includes('{') && !domain.includes('*')) {
-                        fetch('https://' + domain, { mode: 'no-cors', cache: 'no-cache', signal: AbortSignal.timeout(5000) })
-                            .then(() => { statusEl.className = 'status-dot status-online'; statusEl.title = 'Online (ping)'; })
-                            .catch(() => { statusEl.className = 'status-dot status-offline'; statusEl.title = 'Unreachable (ping)'; });
+                    const domains = (card.dataset.domains || '').split('|').filter(d => d && !d.includes('{') && !d.includes('*'));
+                    const domain = domains[0];
+                    if (domain) {
+                        fetch(`/api/ping?url=https://${encodeURIComponent(domain)}`)
+                            .then(r => r.json())
+                            .then(data => {
+                                statusEl.className = data.ok ? 'status-dot status-online' : 'status-dot status-offline';
+                                statusEl.title = data.ok ? `Online · ${data.latency_ms}ms (${data.status_code})` : `Unreachable${data.error ? ': ' + data.error : ''}`;
+                            })
+                            .catch(() => { statusEl.className = 'status-dot status-unknown'; statusEl.title = 'Ping failed'; });
                         return;
                     }
                 }

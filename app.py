@@ -784,6 +784,7 @@ _SILENT_PREFIXES = (
     '/api/manager/version',
     '/api/configs',
     '/api/settings/tabs',
+    '/api/ping',
 )
 
 @app.before_request
@@ -1353,6 +1354,23 @@ def api_entrypoints():
 @login_required
 def api_version():
     return jsonify(traefik_api_get('/api/version') or {})
+
+@app.route('/api/ping')
+@login_required
+def api_route_ping():
+    import time as _t
+    url = request.args.get('url', '').strip()
+    if not url or not url.startswith(('http://', 'https://')):
+        return jsonify({'ok': False, 'error': 'Invalid URL'}), 400
+    try:
+        t0   = _t.monotonic()
+        resp = requests.head(url, timeout=5, allow_redirects=True, verify=False)
+        ms   = round((_t.monotonic() - t0) * 1000)
+        return jsonify({'ok': True, 'latency_ms': ms, 'status_code': resp.status_code})
+    except requests.Timeout:
+        return jsonify({'ok': False, 'error': 'Timeout', 'latency_ms': None})
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)[:80], 'latency_ms': None})
 
 @app.route('/api/traefik/ping')
 @login_required
