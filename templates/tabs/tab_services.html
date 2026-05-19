@@ -51,7 +51,7 @@
         {% set route_domains = raw_rule.split(' || ') %}
         {% set domain = route_domains[0] %}
 
-        <div class="card route-card{% if not app.enabled %} opacity-50{% endif %}" data-protocol="{{ app.protocol }}" data-name="{{ app.name | lower }}" data-routekey="{{ app.name }}" data-idx="{{ loop.index0 }}" data-enabled="{{ app.enabled | tojson }}" data-domains="{{ route_domains | join('|') }}">
+        <div class="card route-card{% if not app.enabled %} opacity-50{% endif %}" data-protocol="{{ app.protocol }}" data-name="{{ app.name | lower }}" data-routekey="{{ app.name }}" data-idx="{{ loop.index0 }}" data-enabled="{{ app.enabled | tojson }}" data-domains="{{ route_domains | join('|') }}" data-target="{{ app.target }}">
 
             <div class="route-card-inner p-4 pb-2">
             <div class="flex justify-between items-start mb-3">

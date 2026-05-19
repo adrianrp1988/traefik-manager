@@ -748,10 +748,206 @@ function openMwModal() {
     if (newMwInput) { newMwInput.style.display = 'none'; newMwInput.value = ''; }
     if (mwCfSel && mwCfHid && mwCfSel.value !== '__new__') mwCfHid.value = mwCfSel.value;
     modal.style.display = 'flex';
+    const mwTplSel = document.getElementById('mwTemplate');
+    if (mwTplSel) mwTplSel.value = '';
+    setMwMode('yaml');
+    _showMwWizard('');
     _initMwMonaco('');
 }
 
 function closeMwModal() { document.getElementById('mwModal').style.display = 'none'; }
+
+function togglePwVis(inputId, btn) {
+    const el = document.getElementById(inputId);
+    if (!el) return;
+    const show = el.type === 'password';
+    el.type = show ? 'text' : 'password';
+    btn.innerHTML = show ? '<i class="ph-bold ph-eye-slash text-sm"></i>' : '<i class="ph-bold ph-eye text-sm"></i>';
+}
+
+async function generateHtpasswd() {
+    const user = (document.getElementById('wizBaGenUser')?.value || '').trim();
+    const pass = (document.getElementById('wizBaGenPass')?.value || '');
+    if (!user || !pass) { showToast('Enter a username and password', 'error'); return; }
+    const csrf = document.querySelector('meta[name="csrf-token"]')?.content || '';
+    try {
+        const res  = await fetch('/api/tools/htpasswd', { method:'POST', headers:{'Content-Type':'application/json','X-CSRF-Token': csrf}, body: JSON.stringify({username: user, password: pass}) });
+        const json = await res.json();
+        if (!json.ok) { showToast(json.error || 'Failed', 'error'); return; }
+        const ta = document.getElementById('wizBaUsers');
+        if (ta) ta.value = (ta.value.trim() ? ta.value.trim() + '\n' : '') + json.hash;
+        document.getElementById('wizBaGenUser').value = '';
+        document.getElementById('wizBaGenPass').value = '';
+    } catch(e) { showToast('Error generating hash', 'error'); }
+}
+
+function setMwMode(mode) {
+    document.getElementById('mwCurrentMode').value = mode;
+    const wizBtn  = document.getElementById('mwModeWizBtn');
+    const yamlBtn = document.getElementById('mwModeYamlBtn');
+    const wizSec  = document.getElementById('mwWizardSection');
+    const edSec   = document.getElementById('mwEditorSection');
+    if (mode === 'wizard') {
+        wizBtn.classList.add('active-http');
+        yamlBtn.classList.remove('active-http');
+        if (wizSec) wizSec.style.display = '';
+        if (edSec)  edSec.style.display  = 'none';
+    } else {
+        yamlBtn.classList.add('active-http');
+        wizBtn.classList.remove('active-http');
+        if (wizSec) wizSec.style.display = 'none';
+        if (edSec)  edSec.style.display  = '';
+        const tpl = document.getElementById('mwTemplate')?.value;
+        if (tpl && _wizardTemplates.has(tpl)) {
+            buildYamlFromWizard();
+            const yaml = document.getElementById('middlewareContent')?.value || '';
+            if (_mwMonacoEditor) {
+                _mwMonacoEditor.setValue(yaml);
+                setTimeout(() => _mwMonacoEditor.layout(), 50);
+            } else {
+                _initMwMonaco(yaml);
+            }
+        } else if (_mwMonacoEditor) {
+            setTimeout(() => _mwMonacoEditor.layout(), 50);
+        }
+    }
+}
+
+const _wizardTemplates = new Set(['basicAuth','digestAuth','forwardAuth','forwardAuthAuthentik','forwardAuthAuthelia','ipAllowList','ipAllowListPrivate','rateLimit','secureHeaders','corsHeaders','redirectScheme','redirectRegex','stripPrefix','addPrefix','replacePath','compress','retry','circuitBreaker','buffering','chain','inFlightReq']);
+
+const _wizKeyMap = {
+    forwardAuthAuthentik: 'forwardAuth', forwardAuthAuthelia: 'forwardAuth',
+    ipAllowListPrivate: 'ipAllowList',
+};
+
+function _showMwWizard(tpl) {
+    document.querySelectorAll('.mw-wiz-form').forEach(el => el.style.display = 'none');
+    const none = document.getElementById('mwWiz-none');
+    if (!tpl || !_wizardTemplates.has(tpl)) { if (none) none.style.display = ''; return; }
+    const key = _wizKeyMap[tpl] || tpl;
+    const sec = document.getElementById('mwWiz-' + key);
+    if (sec) sec.style.display = '';
+    if (tpl === 'forwardAuthAuthentik') {
+        const el = document.getElementById('wizFaAddress'); if (el) el.value = 'http://authentik-server:9000/outpost.goauthentik.io/auth/traefik';
+        const hd = document.getElementById('wizFaHeaders'); if (hd) hd.value = 'X-authentik-username\nX-authentik-groups\nX-authentik-email\nX-authentik-name\nX-authentik-uid';
+    } else if (tpl === 'forwardAuthAuthelia') {
+        const el = document.getElementById('wizFaAddress'); if (el) el.value = 'http://authelia:9091/api/authz/forward-auth';
+        const hd = document.getElementById('wizFaHeaders'); if (hd) hd.value = 'Remote-User\nRemote-Groups\nRemote-Name\nRemote-Email';
+    } else if (tpl === 'ipAllowListPrivate') {
+        const el = document.getElementById('wizIpCidrs'); if (el) el.value = '10.0.0.0/8\n172.16.0.0/12\n192.168.0.0/16\n127.0.0.1/32';
+    }
+}
+
+function buildYamlFromWizard() {
+    const tpl = document.getElementById('mwTemplate')?.value;
+    if (!tpl || !_wizardTemplates.has(tpl)) return;
+    let yaml = '';
+    const key = _wizKeyMap[tpl] || tpl;
+
+    const _lines = (id) => (document.getElementById(id)?.value || '').trim().split('\n').map(l => l.trim()).filter(Boolean);
+    const _val   = (id, def='') => (document.getElementById(id)?.value || def).trim();
+    const _chk   = (id, def=false) => document.getElementById(id)?.checked ?? def;
+
+    if (key === 'basicAuth') {
+        const users = _lines('wizBaUsers');
+        const realm = _val('wizBaRealm');
+        yaml = 'basicAuth:\n  users:\n' + users.map(l => '    - "' + l + '"').join('\n');
+        if (realm) yaml += '\n  realm: "' + realm + '"';
+
+    } else if (key === 'digestAuth') {
+        const users = _lines('wizDaUsers');
+        const realm = _val('wizDaRealm');
+        yaml = 'digestAuth:\n  users:\n' + users.map(l => '    - "' + l + '"').join('\n');
+        if (realm) yaml += '\n  realm: "' + realm + '"';
+
+    } else if (key === 'forwardAuth') {
+        const addr  = _val('wizFaAddress');
+        const trust = _chk('wizFaTrust', true);
+        const hdrs  = _lines('wizFaHeaders');
+        yaml = 'forwardAuth:\n  address: "' + addr + '"\n  trustForwardHeader: ' + trust;
+        if (hdrs.length) yaml += '\n  authResponseHeaders:\n' + hdrs.map(h => '    - "' + h + '"').join('\n');
+
+    } else if (key === 'rateLimit') {
+        yaml = 'rateLimit:\n  average: ' + _val('wizRlAvg','100') + '\n  burst: ' + _val('wizRlBurst','50') + '\n  period: ' + _val('wizRlPeriod','1s');
+
+    } else if (key === 'ipAllowList') {
+        const cidrs = _lines('wizIpCidrs');
+        yaml = 'ipAllowList:\n  sourceRange:\n' + cidrs.map(c => '    - "' + c + '"').join('\n');
+
+    } else if (key === 'secureHeaders') {
+        const lines = ['headers:'];
+        if (_chk('wizShSsl'))     lines.push('  sslRedirect: true');
+        if (_chk('wizShHsts')) {
+            lines.push('  forceSTSHeader: true');
+            lines.push('  stsSeconds: ' + _val('wizShHstsAge','315360000'));
+            if (_chk('wizShSub'))     lines.push('  stsIncludeSubdomains: true');
+            if (_chk('wizShPreload')) lines.push('  stsPreload: true');
+        }
+        if (_chk('wizShNosniff'))  lines.push('  contentTypeNosniff: true');
+        if (_chk('wizShXss'))      lines.push('  browserXssFilter: true');
+        if (_chk('wizShFrame'))    lines.push('  frameDeny: true');
+        if (_chk('wizShReferrer')) lines.push('  referrerPolicy: "same-origin"');
+        yaml = lines.join('\n');
+
+    } else if (key === 'corsHeaders') {
+        const methods = ['GET','POST','PUT','DELETE','PATCH','OPTIONS','HEAD']
+            .filter(m => _chk('wizCors' + m.charAt(0) + m.slice(1).toLowerCase()));
+        const origins = _lines('wizCorsOrigins');
+        const hdrs    = _lines('wizCorsHeaders');
+        const maxAge  = _val('wizCorsMaxAge','100');
+        const vary    = _chk('wizCorsVary', true);
+        const lines = ['headers:'];
+        if (methods.length) lines.push('  accessControlAllowMethods:\n' + methods.map(m => '    - ' + m).join('\n'));
+        if (hdrs.length)    lines.push('  accessControlAllowHeaders:\n' + hdrs.map(h => '    - "' + h + '"').join('\n'));
+        if (origins.length) lines.push('  accessControlAllowOriginList:\n' + origins.map(o => '    - "' + o + '"').join('\n'));
+        lines.push('  accessControlMaxAge: ' + maxAge);
+        if (vary) lines.push('  addVaryHeader: true');
+        yaml = lines.join('\n');
+
+    } else if (key === 'redirectScheme') {
+        yaml = 'redirectScheme:\n  scheme: ' + _val('wizRsScheme','https') + '\n  permanent: ' + _chk('wizRsPermanent',true);
+
+    } else if (key === 'redirectRegex') {
+        const repl = _val('wizRrReplacement').replace(/\$/g, '$${');
+        yaml = 'redirectRegex:\n  regex: "' + _val('wizRrRegex') + '"\n  replacement: "' + repl + '"\n  permanent: ' + _chk('wizRrPermanent',true);
+
+    } else if (key === 'stripPrefix') {
+        const prefixes = _lines('wizSpPrefixes');
+        yaml = 'stripPrefix:\n  prefixes:\n' + prefixes.map(p => '    - "' + p + '"').join('\n');
+
+    } else if (key === 'addPrefix') {
+        yaml = 'addPrefix:\n  prefix: "' + _val('wizApPrefix') + '"';
+
+    } else if (key === 'replacePath') {
+        yaml = 'replacePath:\n  path: "' + _val('wizRpPath') + '"';
+
+    } else if (key === 'compress') {
+        yaml = 'compress:\n  minResponseBodyBytes: ' + _val('wizCmpMin','1200');
+
+    } else if (key === 'retry') {
+        yaml = 'retry:\n  attempts: ' + _val('wizRtAttempts','4') + '\n  initialInterval: ' + _val('wizRtInterval','100ms');
+
+    } else if (key === 'circuitBreaker') {
+        yaml = 'circuitBreaker:\n  expression: "' + _val('wizCbExpr') + '"';
+
+    } else if (key === 'buffering') {
+        const retryExpr = _val('wizBufRetry');
+        yaml = 'buffering:\n  maxRequestBodyBytes: ' + _val('wizBufReq','10485760') + '\n  maxResponseBodyBytes: ' + _val('wizBufRes','10485760');
+        if (retryExpr) yaml += '\n  retryExpression: "' + retryExpr + '"';
+
+    } else if (key === 'chain') {
+        const mws = _lines('wizChMiddlewares');
+        yaml = 'chain:\n  middlewares:\n' + mws.map(m => '    - ' + m).join('\n');
+
+    } else if (key === 'inFlightReq') {
+        yaml = 'inFlightReq:\n  amount: ' + _val('wizIfAmount','10');
+    }
+
+    if (yaml) {
+        document.getElementById('middlewareContent').value = yaml;
+        if (_mwMonacoEditor) _mwMonacoEditor.setValue(yaml);
+    }
+}
 
 function onRouteConfigFileChange(sel) {
     const newInput = document.getElementById('newRouteFileName');
@@ -810,7 +1006,10 @@ async function saveRouteAjax(event) {
 
 async function saveMwAjax(event) {
     event.preventDefault();
-    if (_mwMonacoEditor) {
+    const mwMode = document.getElementById('mwCurrentMode')?.value;
+    if (mwMode === 'wizard') {
+        buildYamlFromWizard();
+    } else if (_mwMonacoEditor) {
         document.getElementById('middlewareContent').value = _mwMonacoEditor.getValue();
     }
     const form = event.target;
@@ -898,20 +1097,36 @@ async function pingAllRoutes() {
     });
     if (!pingable.length) { showToast('No pingable HTTP routes found', 'info'); return; }
     showToast(`Pinging ${pingable.length} HTTP route${pingable.length > 1 ? 's' : ''}…`, 'success');
+    let online = 0, offline = 0;
+    const offlineRoutes = [];
     for (const card of pingable) {
-        const domain = (card.dataset.domains || '').split('|').find(d => d && !d.includes('{') && !d.includes('*'));
+        const domain   = (card.dataset.domains || '').split('|').find(d => d && !d.includes('{') && !d.includes('*'));
+        const target   = card.dataset.target || '';
         const statusEl = card.querySelector('.status-dot');
         if (statusEl) { statusEl.className = 'status-dot status-checking'; statusEl.title = 'Pinging…'; }
         try {
-            const data = await fetch(`/api/ping?url=https://${encodeURIComponent(domain)}`).then(r => r.json());
+            const params = `/api/ping?url=${encodeURIComponent('https://' + domain)}${target ? '&fallback=' + encodeURIComponent(target) : ''}`;
+            const data = await fetch(params).then(r => r.json());
             if (statusEl) {
                 statusEl.className = data.ok ? 'status-dot status-online' : 'status-dot status-offline';
-                statusEl.title = data.ok ? `Online · ${data.latency_ms}ms (${data.status_code})` : `Unreachable${data.error ? ': ' + data.error : ''}`;
+                statusEl.title = data.ok
+                    ? (data.self ? `Online (self)` : data.via_target ? `Backend online · ${data.latency_ms}ms` : `Online · ${data.latency_ms}ms (${data.status_code})`)
+                    : `Unreachable${data.error ? ': ' + data.error : ''}`;
             }
+            if (data.ok) { online++; } else { offline++; offlineRoutes.push(domain); }
         } catch(e) {
             if (statusEl) { statusEl.className = 'status-dot status-unknown'; statusEl.title = 'Ping failed'; }
+            offline++; offlineRoutes.push(domain);
         }
     }
+    const total = online + offline;
+    const type  = offline > 0 ? 'warning' : 'info';
+    const msg   = offline > 0
+        ? `Ping all: ${online}/${total} online - unreachable: ${offlineRoutes.join(', ')}`
+        : `Ping all: all ${total} route${total !== 1 ? 's' : ''} online`;
+    const csrf = document.querySelector('meta[name="csrf-token"]')?.content || '';
+    fetch('/api/notifications/add', { method:'POST', headers:{'Content-Type':'application/json','X-CSRF-Token':csrf}, body: JSON.stringify({type, message: msg}) })
+        .then(() => fetchNotifications());
 }
 
 function showAddApiKeyForm() {
@@ -1391,6 +1606,10 @@ function handleMwEdit(btn) {
     if (cfSel && mw.configFile) cfSel.value = mw.configFile;
     const newMwInput = document.getElementById('newMwFileName');
     if (newMwInput) { newMwInput.style.display = 'none'; newMwInput.value = ''; }
+    const mwTplSel2 = document.getElementById('mwTemplate');
+    if (mwTplSel2) mwTplSel2.value = '';
+    setMwMode('yaml');
+    _showMwWizard('');
     document.getElementById('mwModal').style.display = 'flex';
     _initMwMonaco(mw.yaml.trim());
 }
@@ -1420,13 +1639,16 @@ const mwTemplates = {
 };
 
 function applyMwTemplate(select) {
-    if (select.value && mwTemplates[select.value]) {
-        const val = mwTemplates[select.value];
-        if (_mwMonacoEditor) {
-            _mwMonacoEditor.setValue(val);
-        } else {
-            document.getElementById('middlewareContent').value = val;
-        }
+    const tpl = select.value;
+    if (!tpl) return;
+    if (_wizardTemplates.has(tpl)) {
+        _showMwWizard(tpl);
+        setMwMode('wizard');
+    } else if (mwTemplates[tpl]) {
+        setMwMode('yaml');
+        const val = mwTemplates[tpl];
+        if (_mwMonacoEditor) _mwMonacoEditor.setValue(val);
+        else document.getElementById('middlewareContent').value = val;
     }
 }
 
@@ -1588,11 +1810,15 @@ async function loadOverviewStats() {
                     const domains = (card.dataset.domains || '').split('|').filter(d => d && !d.includes('{') && !d.includes('*'));
                     const domain = domains[0];
                     if (domain) {
-                        fetch(`/api/ping?url=https://${encodeURIComponent(domain)}`)
+                        const tgt = card.dataset.target || '';
+                        const pingUrl = `/api/ping?url=${encodeURIComponent('https://' + domain)}${tgt ? '&fallback=' + encodeURIComponent(tgt) : ''}`;
+                        fetch(pingUrl)
                             .then(r => r.json())
                             .then(data => {
                                 statusEl.className = data.ok ? 'status-dot status-online' : 'status-dot status-offline';
-                                statusEl.title = data.ok ? `Online · ${data.latency_ms}ms (${data.status_code})` : `Unreachable${data.error ? ': ' + data.error : ''}`;
+                                statusEl.title = data.ok
+                                    ? (data.self ? `Online (self)` : data.via_target ? `Backend online · ${data.latency_ms}ms` : `Online · ${data.latency_ms}ms (${data.status_code})`)
+                                    : `Unreachable${data.error ? ': ' + data.error : ''}`;
                             })
                             .catch(() => { statusEl.className = 'status-dot status-unknown'; statusEl.title = 'Ping failed'; });
                         return;

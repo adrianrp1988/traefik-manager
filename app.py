@@ -1359,18 +1359,84 @@ def api_version():
 @login_required
 def api_route_ping():
     import time as _t
-    url = request.args.get('url', '').strip()
+    from urllib.parse import urlparse
+    url      = request.args.get('url', '').strip()
+    fallback = request.args.get('fallback', '').strip()
     if not url or not url.startswith(('http://', 'https://')):
         return jsonify({'ok': False, 'error': 'Invalid URL'}), 400
-    try:
+    host = urlparse(url).hostname or ''
+    tm_host = request.host.split(':')[0].lower()
+    if host.lower() == tm_host:
+        return jsonify({'ok': True, 'latency_ms': 0, 'status_code': 200, 'self': True})
+    settings = load_settings()
+    self_domain = (settings.get('self_route') or {}).get('domain', '').strip().lower()
+    if self_domain and host.lower() == self_domain:
+        return jsonify({'ok': True, 'latency_ms': 0, 'status_code': 200, 'self': True})
+    def _ping(target):
         t0   = _t.monotonic()
-        resp = requests.head(url, timeout=5, allow_redirects=True, verify=False)
+        resp = requests.head(target, timeout=5, allow_redirects=True, verify=False)
         ms   = round((_t.monotonic() - t0) * 1000)
-        return jsonify({'ok': True, 'latency_ms': ms, 'status_code': resp.status_code})
-    except requests.Timeout:
-        return jsonify({'ok': False, 'error': 'Timeout', 'latency_ms': None})
-    except Exception as e:
-        return jsonify({'ok': False, 'error': str(e)[:80], 'latency_ms': None})
+        return ms, resp.status_code
+    try:
+        ms, code = _ping(url)
+        return jsonify({'ok': True, 'latency_ms': ms, 'status_code': code})
+    except Exception as primary_err:
+        if fallback and fallback.startswith(('http://', 'https://')):
+            try:
+                ms, code = _ping(fallback)
+                return jsonify({'ok': True, 'latency_ms': ms, 'status_code': code, 'via_target': True})
+            except Exception:
+                pass
+        err = str(primary_err)[:80]
+        return jsonify({'ok': False, 'error': 'Timeout' if 'timeout' in err.lower() else err, 'latency_ms': None})
+
+def _apr1_hash(password: str, salt: str) -> str:
+    import hashlib, struct
+    pw  = password.encode('utf-8')
+    sl  = salt.encode('ascii')
+    mgc = b'$apr1$'
+    a   = hashlib.md5(pw + mgc + sl)
+    b   = hashlib.md5(pw + sl + pw).digest()
+    plen = len(pw)
+    a.update(b * (plen // 16) + b[:plen % 16])
+    i = plen
+    while i:
+        a.update(b'\x00' if (i & 1) else pw)
+        i >>= 1
+    a = a.digest()
+    for i in range(1000):
+        c = hashlib.md5()
+        c.update(pw if (i & 1) else a)
+        if i % 3: c.update(sl)
+        if i % 7: c.update(pw)
+        c.update(a if (i & 1) else pw)
+        a = c.digest()
+    t64 = './0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
+    def to64(v, n):
+        r = ''
+        for _ in range(n):
+            r += t64[v & 0x3f]; v >>= 6
+        return r
+    enc  = to64((a[0]<<16)|(a[6]<<8)|a[12], 4)
+    enc += to64((a[1]<<16)|(a[7]<<8)|a[13], 4)
+    enc += to64((a[2]<<16)|(a[8]<<8)|a[14], 4)
+    enc += to64((a[3]<<16)|(a[9]<<8)|a[15], 4)
+    enc += to64((a[4]<<16)|(a[10]<<8)|a[5], 4)
+    enc += to64(a[11], 2)
+    return f'$apr1${salt}${enc}'
+
+@app.route('/api/tools/htpasswd', methods=['POST'])
+@login_required
+def api_htpasswd():
+    import random, string
+    data     = request.get_json(silent=True) or {}
+    username = data.get('username', '').strip()
+    password = data.get('password', '')
+    if not username or not password:
+        return jsonify({'ok': False, 'error': 'username and password required'}), 400
+    salt = ''.join(random.choices(string.ascii_letters + string.digits + './', k=8))
+    h    = _apr1_hash(password, salt)
+    return jsonify({'ok': True, 'hash': f'{username}:{h}'})
 
 @app.route('/api/traefik/ping')
 @login_required
@@ -1992,6 +2058,18 @@ def api_notifications_clear():
     with _notif_lock:
         _notifications.clear()
     threading.Thread(target=_save_notifications_bg, daemon=True).start()
+    return jsonify({'ok': True})
+
+@app.route('/api/notifications/add', methods=['POST'])
+@login_required
+def api_notifications_add():
+    _check_csrf()
+    data = request.get_json(silent=True) or {}
+    type_ = data.get('type', 'info')
+    msg   = (data.get('message') or '').strip()
+    if not msg:
+        return jsonify({'ok': False, 'error': 'message required'}), 400
+    add_notification(type_, msg)
     return jsonify({'ok': True})
 
 @app.route('/api/notifications/update', methods=['POST'])
