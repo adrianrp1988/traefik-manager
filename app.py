@@ -2496,6 +2496,22 @@ def _build_external_routes(include_internal=False):
     return routes
 
 
+def _entrypoint_mw_map() -> dict:
+    path = _get_static_config_path()
+    if not path or not os.path.isfile(path):
+        return {}
+    try:
+        with open(path, 'r') as f:
+            cfg = yaml.safe_load(f) or {}
+        result = {}
+        for ep_name, ep_val in cfg.get('entryPoints', {}).items():
+            mws = (ep_val or {}).get('http', {}).get('middlewares', [])
+            if mws:
+                result[ep_name] = [str(m) for m in mws]
+        return result
+    except Exception:
+        return {}
+
 def _build_all_apps(include_external=True, include_internal=False):
     all_apps = []
     all_middlewares = []
@@ -2511,11 +2527,20 @@ def _build_all_apps(include_external=True, include_internal=False):
         for k, v in cfg.get('udp', {}).get('services', {}).items():
             combined_udp.setdefault(k, v)
     api_svc_urls = _traefik_service_url_map()
+    ep_mw_map    = _entrypoint_mw_map()
     for cf, config in loaded:
         all_apps.extend(_build_apps(config, cf, combined_http, combined_tcp, combined_udp, api_svc_urls))
         all_middlewares.extend(_build_middlewares(config, cf))
     if include_external:
         all_apps.extend(_build_external_routes(include_internal=include_internal))
+    if ep_mw_map:
+        for app in all_apps:
+            ep_mws = []
+            for ep in app.get('entryPoints', []):
+                for mw in ep_mw_map.get(ep, []):
+                    if mw not in ep_mws:
+                        ep_mws.append(mw)
+            app['entrypointMiddlewares'] = ep_mws
     settings = load_settings()
     for rname, rdata in settings.get('disabled_routes', {}).items():
         proto    = rdata.get('protocol', 'http')
@@ -2532,7 +2557,7 @@ def _build_all_apps(include_external=True, include_internal=False):
                              'entryPoints': router.get('entryPoints', []),
                              'protocol': 'http', 'tls': bool(router.get('tls')), 'enabled': False,
                              'passHostHeader': svc.get('loadBalancer', {}).get('passHostHeader', True),
-                             'configFile': cf, 'provider': 'file'})
+                             'configFile': cf, 'provider': 'file', 'entrypointMiddlewares': []})
         elif proto == 'tcp':
             servers = svc.get('loadBalancer', {}).get('servers', [])
             target  = servers[0].get('address', 'N/A') if servers else 'N/A'
