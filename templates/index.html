@@ -1012,7 +1012,7 @@ async function saveRouteAjax(event) {
         const json = await res.json();
         closeModal();
         showToast(json.message, json.ok ? 'success' : 'error');
-        if (json.ok) { refreshRoutes(); fetchNotifications(); }
+        if (json.ok) { refreshRoutes(); fetchNotifications(); if (typeof window.rmInvalidateData === 'function') window.rmInvalidateData(); }
     } catch(e) {
         showToast('Error saving route', 'error');
     } finally {
@@ -1041,7 +1041,7 @@ async function saveMwAjax(event) {
         const json = await res.json();
         closeMwModal();
         showToast(json.message, json.ok ? 'success' : 'error');
-        if (json.ok) { refreshRoutes(); fetchNotifications(); }
+        if (json.ok) { refreshRoutes(); fetchNotifications(); if (typeof window.rmInvalidateData === 'function') window.rmInvalidateData(); }
     } catch(e) {
         showToast('Error saving middleware', 'error');
     } finally {
@@ -1058,7 +1058,7 @@ async function deleteRoute(id, configFile) {
         const res = await fetch('/delete/' + encodeURIComponent(id), { method:'POST', headers:{'X-Requested-With':'fetch'}, body: data });
         const json = await res.json();
         showToast(json.message, json.ok ? 'success' : 'error');
-        if (json.ok) { refreshRoutes(); fetchNotifications(); }
+        if (json.ok) { refreshRoutes(); fetchNotifications(); if (typeof window.rmInvalidateData === 'function') window.rmInvalidateData(); }
     } catch(e) { showToast('Error deleting route', 'error'); }
 }
 
@@ -1071,7 +1071,7 @@ async function deleteMw(name, configFile) {
         const res = await fetch('/delete-middleware/' + encodeURIComponent(name), { method:'POST', headers:{'X-Requested-With':'fetch'}, body: data });
         const json = await res.json();
         showToast(json.message, json.ok ? 'success' : 'error');
-        if (json.ok) { refreshRoutes(); fetchNotifications(); }
+        if (json.ok) { refreshRoutes(); fetchNotifications(); if (typeof window.rmInvalidateData === 'function') window.rmInvalidateData(); }
     } catch(e) { showToast('Error deleting middleware', 'error'); }
 }
 
