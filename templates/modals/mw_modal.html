@@ -48,6 +48,7 @@
                                 <option value="forwardAuth">Forward Auth</option>
                                 <option value="forwardAuthAuthentik">Forward Auth (Authentik)</option>
                                 <option value="forwardAuthAuthelia">Forward Auth (Authelia)</option>
+                                <option value="forwardAuthGatekeeper">Forward Auth (Gatekeeper)</option>
                             </optgroup>
                             <optgroup label="Security">
                                 <option value="ipAllowList">IP Allow List</option>
@@ -117,6 +118,28 @@
                         <div>
                             <label>Auth Response Headers <span class="text-xs font-normal" style="color:var(--muted)">(one per line)</span></label>
                             <textarea id="wizFaHeaders" class="input-field font-mono text-xs" rows="4" placeholder="X-Auth-User&#10;X-Auth-Token"></textarea>
+                        </div>
+                    </div>
+
+                    <div id="mwWiz-forwardAuthGatekeeper" class="mw-wiz-form space-y-3" style="display:none">
+                        <div>
+                            <label>Gatekeeper URL</label>
+                            <input type="text" id="wizGkUrl" class="input-field font-mono text-sm" placeholder="https://auth.example.com">
+                            <p class="text-xs mt-1" style="color:var(--muted)"><code class="font-mono">/auth/verify</code> is appended automatically</p>
+                        </div>
+                        <div>
+                            <label>Policy <span class="text-xs font-normal" style="color:var(--muted)">(optional)</span></label>
+                            <input type="text" id="wizGkPolicy" class="input-field" placeholder="admin">
+                            <p class="text-xs mt-1" style="color:var(--muted)">Appends <code class="font-mono">?policy=name</code> to the verify URL</p>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <input type="checkbox" id="wizGkTrust" class="rounded" style="accent-color:var(--blue)">
+                            <span class="text-sm" style="color:var(--text)">Trust Forward Header</span>
+                        </div>
+                        <div>
+                            <label>Auth Response Headers <span class="text-xs font-normal" style="color:var(--muted)">(one per line)</span></label>
+                            <textarea id="wizGkHeaders" class="input-field font-mono text-xs" rows="3">X-Auth-User
+X-Auth-Email</textarea>
                         </div>
                     </div>
 

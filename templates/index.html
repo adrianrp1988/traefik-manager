@@ -840,7 +840,7 @@ function setMwMode(mode) {
     }
 }
 
-const _wizardTemplates = new Set(['basicAuth','digestAuth','forwardAuth','forwardAuthAuthentik','forwardAuthAuthelia','ipAllowList','ipAllowListPrivate','rateLimit','secureHeaders','corsHeaders','redirectScheme','redirectRegex','stripPrefix','addPrefix','replacePath','compress','retry','circuitBreaker','buffering','chain','inFlightReq']);
+const _wizardTemplates = new Set(['basicAuth','digestAuth','forwardAuth','forwardAuthAuthentik','forwardAuthAuthelia','forwardAuthGatekeeper','ipAllowList','ipAllowListPrivate','rateLimit','secureHeaders','corsHeaders','redirectScheme','redirectRegex','stripPrefix','addPrefix','replacePath','compress','retry','circuitBreaker','buffering','chain','inFlightReq']);
 
 const _wizKeyMap = {
     forwardAuthAuthentik: 'forwardAuth', forwardAuthAuthelia: 'forwardAuth',
@@ -889,6 +889,15 @@ function buildYamlFromWizard() {
         const addr  = _val('wizFaAddress');
         const trust = _chk('wizFaTrust', true);
         const hdrs  = _lines('wizFaHeaders');
+        yaml = 'forwardAuth:\n  address: "' + addr + '"\n  trustForwardHeader: ' + trust;
+        if (hdrs.length) yaml += '\n  authResponseHeaders:\n' + hdrs.map(h => '    - "' + h + '"').join('\n');
+
+    } else if (key === 'forwardAuthGatekeeper') {
+        const url    = _val('wizGkUrl').replace(/\/+$/, '');
+        const policy = _val('wizGkPolicy');
+        const addr   = url ? url + '/auth/verify' + (policy ? '?policy=' + policy : '') : '';
+        const trust  = _chk('wizGkTrust', false);
+        const hdrs   = _lines('wizGkHeaders');
         yaml = 'forwardAuth:\n  address: "' + addr + '"\n  trustForwardHeader: ' + trust;
         if (hdrs.length) yaml += '\n  authResponseHeaders:\n' + hdrs.map(h => '    - "' + h + '"').join('\n');
 
@@ -1649,6 +1658,7 @@ const mwTemplates = {
     forwardAuth: `forwardAuth:\n  address: "http://auth-service:4181"\n  trustForwardHeader: true\n  authResponseHeaders:\n    - "X-Auth-User"\n    - "X-Auth-Token"`,
     forwardAuthAuthentik: `forwardAuth:\n  address: "http://authentik-server:9000/outpost.goauthentik.io/auth/traefik"\n  trustForwardHeader: true\n  authResponseHeaders:\n    - X-authentik-username\n    - X-authentik-groups\n    - X-authentik-email\n    - X-authentik-name\n    - X-authentik-uid`,
     forwardAuthAuthelia: `forwardAuth:\n  address: "http://authelia:9091/api/authz/forward-auth"\n  trustForwardHeader: true\n  authResponseHeaders:\n    - Remote-User\n    - Remote-Groups\n    - Remote-Name\n    - Remote-Email`,
+    forwardAuthGatekeeper: `forwardAuth:\n  address: "https://auth.example.com/auth/verify"\n  trustForwardHeader: false\n  authResponseHeaders:\n    - "X-Auth-User"\n    - "X-Auth-Email"`,
     ipAllowList: `ipAllowList:\n  sourceRange:\n    - "127.0.0.1/32"\n    - "192.168.1.0/24"`,
     ipAllowListPrivate: `ipAllowList:\n  sourceRange:\n    - "10.0.0.0/8"\n    - "172.16.0.0/12"\n    - "192.168.0.0/16"\n    - "127.0.0.1/32"`,
     rateLimit: `rateLimit:\n  average: 100\n  burst: 50\n  period: 1s`,
