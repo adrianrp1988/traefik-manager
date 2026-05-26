@@ -6,7 +6,7 @@ LABEL org.opencontainers.image.title="Traefik Manager" \
       org.opencontainers.image.source="https://github.com/chr0nzz/traefik-manager" \
       org.opencontainers.image.licenses="GPL-3.0"
 
-RUN apk add --no-cache curl
+RUN apk add --no-cache curl tar
 
 WORKDIR /app
 
@@ -15,7 +15,51 @@ RUN pip install --no-cache-dir -r requirements.txt gunicorn
 
 COPY . .
 
-RUN mkdir -p /app/config /app/backups /app/templates /app/static/icons
+RUN mkdir -p /app/config /app/backups /app/templates /app/static/icons \
+             /app/static/vendor/monaco /app/static/vendor/fonts/inter \
+             /app/static/vendor/fonts/jetbrains-mono
+
+RUN curl -sLo /usr/local/bin/tailwindcss \
+    https://github.com/tailwindlabs/tailwindcss/releases/download/v3.4.17/tailwindcss-linux-x64 \
+    && chmod +x /usr/local/bin/tailwindcss
+
+RUN curl -sLo /app/static/vendor/phosphor.js \
+    "https://unpkg.com/@phosphor-icons/web@2.1.1"
+
+RUN curl -sLo /app/static/vendor/qrcode.min.js \
+    "https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"
+
+RUN curl -sLo /app/static/vendor/dagre.min.js \
+    "https://cdn.jsdelivr.net/npm/dagre@0.8.5/dist/dagre.min.js"
+
+RUN curl -sL "https://registry.npmjs.org/monaco-editor/-/monaco-editor-0.52.0.tgz" \
+    | tar -xz -C /tmp \
+    && mv /tmp/package/min/vs /app/static/vendor/monaco/vs \
+    && rm -rf /tmp/package
+
+RUN mkdir -p /app/static/vendor/monaco-themes \
+    && curl -sLo "/app/static/vendor/monaco-themes/GitHub Light.json" \
+        "https://cdn.jsdelivr.net/npm/monaco-themes@0.4.4/themes/GitHub%20Light.json" \
+    && curl -sLo "/app/static/vendor/monaco-themes/GitHub Dark.json" \
+        "https://cdn.jsdelivr.net/npm/monaco-themes@0.4.4/themes/GitHub%20Dark.json"
+
+RUN curl -sL "https://registry.npmjs.org/@fontsource/inter/-/inter-5.1.1.tgz" \
+    | tar -xz -C /tmp \
+    && cp /tmp/package/index.css /app/static/vendor/fonts/inter.css \
+    && sed -i "s|url('./files/|url('./inter/|g" /app/static/vendor/fonts/inter.css \
+    && cp /tmp/package/files/*.woff2 /app/static/vendor/fonts/inter/ \
+    && rm -rf /tmp/package
+
+RUN curl -sL "https://registry.npmjs.org/@fontsource/jetbrains-mono/-/jetbrains-mono-5.1.0.tgz" \
+    | tar -xz -C /tmp \
+    && cp /tmp/package/index.css /app/static/vendor/fonts/jetbrains-mono.css \
+    && sed -i "s|url('./files/|url('./jetbrains-mono/|g" /app/static/vendor/fonts/jetbrains-mono.css \
+    && cp /tmp/package/files/*.woff2 /app/static/vendor/fonts/jetbrains-mono/ \
+    && rm -rf /tmp/package
+
+RUN tailwindcss -c /app/tailwind.config.js \
+    -i /app/static/css/tailwind.input.css \
+    -o /app/static/css/tailwind.css --minify
 
 ENV CERT_RESOLVER=cloudflare
 ENV DOMAINS=example.com

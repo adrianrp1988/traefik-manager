@@ -315,7 +315,7 @@ Add routes, manage middlewares, monitor services, and view TLS certificates - al
   <img src="static/icons/GetItOnGooglePlay.svg" alt="Get it on Google Play" height="60" />
 </a>
 
-Features: browse routes, middlewares, and services · enable/disable routes · add and edit routes and middlewares (12 middleware templates) · multiple domains per route · per-service insecureSkipVerify · backend scheme + pass host header controls · multi-config file picker · edit mode for bulk actions · system light/dark theme.
+Features: browse routes, middlewares, and services · enable/disable routes · add and edit routes and middlewares (23 middleware templates with guided wizards) · multiple domains per route · per-service insecureSkipVerify · backend scheme + pass host header controls · multi-config file picker · edit mode for bulk actions · CrowdSec tab · system light/dark theme.
 
 ---
 
@@ -395,7 +395,7 @@ Full documentation at **[traefik-manager.xyzlab.dev](https://traefik-manager.xyz
 | Frontend  | Vanilla JS · Tailwind CSS · Phosphor Icons    |
 | Editor    | Monaco Editor (VS Code engine)                |
 | Route Map | dagre (graph layout)                          |
-| Container | Docker · Alpine Linux                         |
+| Container | Docker · Alpine Linux · all JS/CSS dependencies bundled at build time (no CDN at runtime) |
 
 ---
 

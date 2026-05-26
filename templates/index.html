@@ -46,34 +46,12 @@
         html:not([data-tm-pref]) .tm-theme-icon[data-pref="dark"] { display: inline; }
         .tab-optional { display: none; }
     </style>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        tailwind.config = {
-            darkMode: 'class',
-            theme: {
-                extend: {
-                    colors: {
-                        traefik: {
-                            blue: '#24a1de',
-                            dark: '#0d1117',
-                            card: '#161b22',
-                            border: '#30363d',
-                            muted: '#8b949e',
-                        }
-                    },
-                    fontFamily: {
-                        mono: ['"JetBrains Mono"', 'monospace'],
-                        sans: ['"Inter"', 'sans-serif'],
-                    }
-                }
-            }
-        }
-    </script>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-    <script src="https://unpkg.com/@phosphor-icons/web"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-    <link rel="stylesheet" href="/static/css/app.css?v=0.7.0">
+    <link rel="stylesheet" href="/static/vendor/fonts/inter.css">
+    <link rel="stylesheet" href="/static/vendor/fonts/jetbrains-mono.css">
+    <link rel="stylesheet" href="/static/css/app.css?v=1.3.0">
+    <link rel="stylesheet" href="/static/css/tailwind.css">
+    <script src="/static/vendor/phosphor.js"></script>
+    <script src="/static/vendor/qrcode.min.js"></script>
 </head>
 <body class="min-h-screen font-sans">
 
@@ -4218,10 +4196,10 @@ if (document.getElementById('toastContainer') && document.getElementById('toastC
 
 <div id="_copyToast" style="position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--text);color:var(--bg);padding:6px 16px;border-radius:8px;font-size:13px;font-weight:500;pointer-events:none;opacity:0;transition:opacity 0.2s;z-index:9999"></div>
 
-<script src="https://cdn.jsdelivr.net/npm/dagre@0.8.5/dist/dagre.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.52.0/min/vs/loader.js"></script>
+<script src="/static/vendor/dagre.min.js"></script>
+<script src="/static/vendor/monaco/vs/loader.js"></script>
 <script>
-require.config({ paths: { vs: 'https://cdn.jsdelivr.net/npm/monaco-editor@0.52.0/min/vs' } });
+require.config({ paths: { vs: '/static/vendor/monaco/vs' } });
 
 let _staticMonaco          = null;
 let _staticRawContent      = '';
@@ -4259,8 +4237,8 @@ function _monacoThemeName(isDark) { return isDark ? 'github-dark' : 'github-ligh
 function _ensureMonacoThemes() {
     if (_monacoThemesPromise) return _monacoThemesPromise;
     _monacoThemesPromise = Promise.all([
-        fetch('https://cdn.jsdelivr.net/npm/monaco-themes@0.4.4/themes/GitHub%20Light.json').then(r => r.json()),
-        fetch('https://cdn.jsdelivr.net/npm/monaco-themes@0.4.4/themes/GitHub%20Dark.json').then(r => r.json()),
+        fetch('/static/vendor/monaco-themes/GitHub%20Light.json').then(r => r.json()),
+        fetch('/static/vendor/monaco-themes/GitHub%20Dark.json').then(r => r.json()),
     ]).then(([light, dark]) => {
         monaco.editor.defineTheme('github-light', light);
         monaco.editor.defineTheme('github-dark', dark);

@@ -5,8 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% if setup_mode %}Set Up Traefik Manager{% elif force_change_mode %}Change Password - Traefik Manager{% else %}Sign In - Traefik Manager{% endif %}</title>
     <link rel="icon" type="image/png" sizes="192x192" href="/static/icons/icon.png">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    <link rel="stylesheet" href="/static/vendor/fonts/inter.css">
+    <link rel="stylesheet" href="/static/vendor/fonts/jetbrains-mono.css">
+    <script src="/static/vendor/phosphor.js"></script>
     <script>
         (function() {
             var t = localStorage.getItem('tm-theme') || 'dark';
