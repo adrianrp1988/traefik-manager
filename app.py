@@ -2557,6 +2557,14 @@ def save_config(data, path=None):
 def _svc_key(name):
     return name.split('@')[0] if '@' in name else name
 
+def _to_list(val, default=None):
+    if val is None:
+        return default if default is not None else []
+    if isinstance(val, list):
+        return val
+    if isinstance(val, str):
+        return [val]
+    return list(val) if hasattr(val, '__iter__') else []
 
 def _build_apps(config, config_file='', extra_http_svcs=None, extra_tcp_svcs=None, extra_udp_svcs=None, api_svc_urls=None):
     apps = []
@@ -2585,8 +2593,8 @@ def _build_apps(config, config_file='', extra_http_svcs=None, extra_tcp_svcs=Non
         insecure = bool(transports_cfg.get(transport_name, {}).get('insecureSkipVerify', False)) if transport_name else False
         apps.append({'id': app_id, 'name': rname, 'rule': rdata.get('rule', ''),
                      'service_name': svc_name, 'target': target_url,
-                     'middlewares': rdata.get('middlewares', []),
-                     'entryPoints': rdata.get('entryPoints', []), 'protocol': 'http',
+                     'middlewares': _to_list(rdata.get('middlewares')),
+                     'entryPoints': _to_list(rdata.get('entryPoints')), 'protocol': 'http',
                      'tls': bool(tls_http), 'enabled': True,
                      'passHostHeader': lb.get('passHostHeader', True),
                      'certResolver': tls_http.get('certResolver', '') if isinstance(tls_http, dict) else '',
@@ -2611,7 +2619,7 @@ def _build_apps(config, config_file='', extra_http_svcs=None, extra_tcp_svcs=Non
         tls_tcp = rdata.get('tls', {})
         apps.append({'id': app_id, 'name': rname, 'rule': rdata.get('rule', ''),
                      'service_name': svc_name, 'target': target,
-                     'middlewares': [], 'entryPoints': rdata.get('entryPoints', []),
+                     'middlewares': [], 'entryPoints': _to_list(rdata.get('entryPoints')),
                      'protocol': 'tcp', 'tls': bool(tls_tcp), 'enabled': True,
                      'certResolver': tls_tcp.get('certResolver', '') if isinstance(tls_tcp, dict) else '',
                      'configFile': config_file, 'provider': 'file'})
@@ -2633,7 +2641,7 @@ def _build_apps(config, config_file='', extra_http_svcs=None, extra_tcp_svcs=Non
         app_id = f"{config_file}::{rname}" if (MULTI_CONFIG and config_file) else rname
         apps.append({'id': app_id, 'name': rname, 'rule': '',
                      'service_name': svc_name, 'target': target,
-                     'middlewares': [], 'entryPoints': rdata.get('entryPoints', []),
+                     'middlewares': [], 'entryPoints': _to_list(rdata.get('entryPoints')),
                      'protocol': 'udp', 'tls': False, 'enabled': True,
                      'configFile': config_file, 'provider': 'file'})
     return apps
