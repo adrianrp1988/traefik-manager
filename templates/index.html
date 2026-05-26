@@ -853,7 +853,11 @@ function _showMwWizard(tpl) {
     if (!tpl || !_wizardTemplates.has(tpl)) { if (none) none.style.display = ''; return; }
     const key = _wizKeyMap[tpl] || tpl;
     const sec = document.getElementById('mwWiz-' + key);
-    if (sec) sec.style.display = '';
+    if (sec) {
+        sec.style.display = '';
+        sec.querySelectorAll('input:not([type=checkbox]):not([type=radio]), textarea').forEach(el => { el.value = ''; });
+        sec.querySelectorAll('input[type=checkbox]').forEach(el => { el.checked = el.defaultChecked; });
+    }
     if (tpl === 'forwardAuthAuthentik') {
         const el = document.getElementById('wizFaAddress'); if (el) el.value = 'http://authentik-server:9000/outpost.goauthentik.io/auth/traefik';
         const hd = document.getElementById('wizFaHeaders'); if (hd) hd.value = 'X-authentik-username\nX-authentik-groups\nX-authentik-email\nX-authentik-name\nX-authentik-uid';
@@ -942,8 +946,7 @@ function buildYamlFromWizard() {
         yaml = 'redirectScheme:\n  scheme: ' + _val('wizRsScheme','https') + '\n  permanent: ' + _chk('wizRsPermanent',true);
 
     } else if (key === 'redirectRegex') {
-        const repl = _val('wizRrReplacement').replace(/\$/g, '$${');
-        yaml = 'redirectRegex:\n  regex: "' + _val('wizRrRegex') + '"\n  replacement: "' + repl + '"\n  permanent: ' + _chk('wizRrPermanent',true);
+        yaml = 'redirectRegex:\n  regex: "' + _val('wizRrRegex') + '"\n  replacement: "' + _val('wizRrReplacement') + '"\n  permanent: ' + _chk('wizRrPermanent',true);
 
     } else if (key === 'stripPrefix') {
         const prefixes = _lines('wizSpPrefixes');
@@ -1526,10 +1529,13 @@ async function _initMiddlewareChips(selectedMiddlewares) {
 
     function render() {
         hidden.value = [...selected].join(', ');
-        container.innerHTML = mws.map(mw => {
+        const sel   = [...selected];
+        const unsel = mws.filter(mw => !selected.has(mw));
+        container.innerHTML = [...sel, ...unsel].map((mw, i) => {
             const on = selected.has(mw);
             const label = mw.split('@')[0];
-            return `<button type="button" onclick="_toggleMwChip('${_esc(mw)}')" style="padding:3px 10px;border-radius:9999px;border:1px solid ${on ? 'var(--purple)' : 'var(--border)'};background:${on ? 'rgba(163,113,247,0.15)' : 'transparent'};color:${on ? 'var(--purple)' : 'var(--muted)'};font-size:12px;font-family:monospace;cursor:pointer" title="${_esc(mw)}">${_esc(label)}</button>`;
+            const divider = (!on && i === sel.length && sel.length > 0) ? 'margin-left:6px;padding-left:6px;border-left:1px solid var(--border);' : '';
+            return `<button type="button" onclick="_toggleMwChip('${_esc(mw)}')" style="${divider}padding:3px 10px;border-radius:9999px;border:1px solid ${on ? 'var(--purple)' : 'var(--border)'};background:${on ? 'rgba(163,113,247,0.15)' : 'transparent'};color:${on ? 'var(--purple)' : 'var(--muted)'};font-size:12px;font-family:monospace;cursor:pointer" title="${_esc(mw)}">${on ? (i + 1) + '. ' : ''}${_esc(label)}</button>`;
         }).join('');
     }
     render();
