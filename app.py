@@ -3278,11 +3278,15 @@ def oidc_login():
     session['oidc_nonce'] = nonce
     redirect_uri = url_for('oidc_callback', _external=True)
     from urllib.parse import urlencode
+    scopes = ['openid', 'email', 'profile']
+    groups_claim = s.get('oidc_groups_claim', '').strip()
+    if s.get('oidc_allowed_groups', '').strip() and groups_claim and groups_claim not in scopes:
+        scopes.append(groups_claim)
     params = urlencode({
         'response_type': 'code',
         'client_id':     s.get('oidc_client_id', ''),
         'redirect_uri':  redirect_uri,
-        'scope':         'openid email profile',
+        'scope':         ' '.join(scopes),
         'state':         state,
         'nonce':         nonce,
     })
