@@ -1106,6 +1106,7 @@ async function refreshRoutes() {
 async function pingAllRoutes() {
     const cards = Array.from(document.querySelectorAll('.route-card')).filter(c => c.dataset.protocol === 'http');
     const pingable = cards.filter(c => {
+        if (c.dataset.enabled === 'false') return false;
         const d = (c.dataset.domains || '').split('|').find(d => d && !d.includes('{') && !d.includes('*'));
         return !!d;
     });
@@ -1376,10 +1377,15 @@ function renderMwGrid(middlewares) {
     filterMw();
 }
 
+let _backdropMd = null;
+document.addEventListener('mousedown', e => { _backdropMd = e.target; });
+function _onBackdropClick(e, fn) {
+    if (e.target === e.currentTarget && _backdropMd === e.currentTarget) fn();
+}
+
 ['appModal','mwModal'].forEach(id => {
-    document.getElementById(id).addEventListener('click', function(e) {
-        if (e.target === this) this.style.display = 'none';
-    });
+    const el = document.getElementById(id);
+    el.addEventListener('click', function(e) { _onBackdropClick(e, () => this.style.display = 'none'); });
 });
 
 const availableDomains = {{ domains | tojson | safe }};
@@ -1907,9 +1913,9 @@ async function loadOverviewStats() {
                 statusEl.className = 'status-dot status-unknown';
                 statusEl.title = `Status: ${apiStatus}`;
             } else {
-                
+
                 const proto = card.dataset.protocol;
-                if (proto === 'http') {
+                if (proto === 'http' && card.dataset.enabled !== 'false') {
                     const domains = (card.dataset.domains || '').split('|').filter(d => d && !d.includes('{') && !d.includes('*'));
                     const domain = domains[0];
                     if (domain) {

@@ -58,7 +58,7 @@
         <button onclick="rmZoomReset()" class="rm-zoom-btn" title="Fit to screen" style="margin-top:2px"><i class="ph-bold ph-arrows-in"></i></button>
     </div>
 
-    <div id="rmPopupOverlay" style="display:none;position:fixed;inset:0;z-index:9990;background:rgba(0,0,0,0.55);backdrop-filter:blur(2px)" onclick="if(event.target===this)rmClosePopup()"></div>
+    <div id="rmPopupOverlay" style="display:none;position:fixed;inset:0;z-index:9990;background:rgba(0,0,0,0.55);backdrop-filter:blur(2px)" onclick="_onBackdropClick(event,rmClosePopup)"></div>
     <div id="rmPopup" class="rm-popup-panel" style="display:none">
         <div class="rm-popup-header">
             <div style="display:flex;align-items:center;gap:8px;min-width:0">

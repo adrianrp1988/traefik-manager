@@ -6,6 +6,8 @@ import secrets
 import logging
 import threading
 import requests
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 from collections import deque
 from datetime import datetime, timezone, timedelta
 from functools import wraps

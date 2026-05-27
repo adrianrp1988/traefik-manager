@@ -46,15 +46,23 @@ RUN mkdir -p /app/static/vendor/monaco-themes \
 RUN curl -sL "https://registry.npmjs.org/@fontsource/inter/-/inter-5.1.1.tgz" \
     | tar -xz -C /tmp \
     && cp /tmp/package/index.css /app/static/vendor/fonts/inter.css \
-    && sed -i "s|url('./files/|url('./inter/|g" /app/static/vendor/fonts/inter.css \
-    && cp /tmp/package/files/*.woff2 /app/static/vendor/fonts/inter/ \
+    && sed -i \
+        -e "s|url('./files/|url('./inter/|g" \
+        -e 's|url("./files/|url("./inter/|g' \
+        -e "s|url(./files/|url(./inter/|g" \
+        /app/static/vendor/fonts/inter.css \
+    && cp /tmp/package/files/* /app/static/vendor/fonts/inter/ \
     && rm -rf /tmp/package
 
 RUN curl -sL "https://registry.npmjs.org/@fontsource/jetbrains-mono/-/jetbrains-mono-5.1.0.tgz" \
     | tar -xz -C /tmp \
     && cp /tmp/package/index.css /app/static/vendor/fonts/jetbrains-mono.css \
-    && sed -i "s|url('./files/|url('./jetbrains-mono/|g" /app/static/vendor/fonts/jetbrains-mono.css \
-    && cp /tmp/package/files/*.woff2 /app/static/vendor/fonts/jetbrains-mono/ \
+    && sed -i \
+        -e "s|url('./files/|url('./jetbrains-mono/|g" \
+        -e 's|url("./files/|url("./jetbrains-mono/|g' \
+        -e "s|url(./files/|url(./jetbrains-mono/|g" \
+        /app/static/vendor/fonts/jetbrains-mono.css \
+    && cp /tmp/package/files/* /app/static/vendor/fonts/jetbrains-mono/ \
     && rm -rf /tmp/package
 
 RUN tailwindcss -c /app/tailwind.config.js \
