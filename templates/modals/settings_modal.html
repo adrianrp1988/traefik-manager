@@ -102,6 +102,13 @@
                         <span class="settings-section-label">Traefik API URL</span>
                         <div class="text-xs mb-2" style="color:var(--muted)">Base URL of the Traefik API used for live stats.</div>
                         <input type="text" id="settingsApiUrl" class="input-field" placeholder="http://traefik:8080" onblur="saveSettings()">
+                        <div class="flex gap-2 mt-2">
+                            <input type="text" id="settingsApiUser" class="input-field text-xs" placeholder="Username (if dashboard requires auth)" onblur="saveSettings()" style="flex:1">
+                            <input type="password" id="settingsApiPassword" class="input-field text-xs" placeholder="Password" onblur="saveSettings()" style="flex:1">
+                        </div>
+                        <div class="text-xs mt-1" style="color:var(--muted)" id="apiPasswordSetHint">
+                            <i class="ph-bold ph-lock"></i> Password saved
+                        </div>
                         <div class="flex items-center gap-2 mt-2">
                             <button onclick="testTraefikApi()" class="nav-btn text-xs" style="height:28px;padding:0 10px;">
                                 <i class="ph-bold ph-plugs-connected"></i> Test connection
@@ -883,6 +890,9 @@ async function openSettingsModal(panel) {
         document.getElementById('settingsDomains').value          = (data.domains || []).join(', ');
         document.getElementById('settingsCertResolver').value     = data.cert_resolver || '';
         document.getElementById('settingsApiUrl').value           = data.traefik_api_url || '';
+        document.getElementById('settingsApiUser').value          = data.traefik_api_user || '';
+        const apiPwHint = document.getElementById('apiPasswordSetHint');
+        if (apiPwHint) apiPwHint.classList.toggle('hidden', !data.traefik_api_password_set);
         document.getElementById('settingsAcmeJsonPath').value     = data.acme_json_path || '';
         document.getElementById('settingsAccessLogPath').value    = data.access_log_path || '';
         document.getElementById('settingsStaticConfigPath').value = data.static_config_path || '';
@@ -1040,14 +1050,16 @@ async function saveSettings() {
     const webhookType       = document.getElementById('webhookTypeSelect')?.value || 'discord';
     const webhookUsername   = document.getElementById('webhookUsername')?.value.trim() || '';
     const webhookPassword   = document.getElementById('webhookPassword')?.value || '';
-    const crowdsecLapiUrl   = document.getElementById('settingsCrowdSecUrl')?.value.trim() || '';
-    const crowdsecApiKey    = document.getElementById('settingsCrowdSecKey')?.value || '';
+    const crowdsecLapiUrl     = document.getElementById('settingsCrowdSecUrl')?.value.trim() || '';
+    const crowdsecApiKey      = document.getElementById('settingsCrowdSecKey')?.value || '';
+    const traefikApiUser      = document.getElementById('settingsApiUser')?.value.trim() || '';
+    const traefikApiPassword  = document.getElementById('settingsApiPassword')?.value || '';
     if (!domains.length) return;
     try {
         const res  = await fetch('/api/settings', {
             method: 'POST',
             headers: {'Content-Type': 'application/json', 'X-CSRF-Token': _csrfHeaders()['X-CSRF-Token']},
-            body: JSON.stringify({ domains, cert_resolver: resolver, traefik_api_url: apiUrl, acme_json_path: acmeJsonPath, access_log_path: accessLogPath, static_config_path: staticConfigPath, webhook_url: webhookUrl, webhook_type: webhookType, webhook_username: webhookUsername, webhook_password: webhookPassword, crowdsec_lapi_url: crowdsecLapiUrl, crowdsec_api_key: crowdsecApiKey })
+            body: JSON.stringify({ domains, cert_resolver: resolver, traefik_api_url: apiUrl, acme_json_path: acmeJsonPath, access_log_path: accessLogPath, static_config_path: staticConfigPath, webhook_url: webhookUrl, webhook_type: webhookType, webhook_username: webhookUsername, webhook_password: webhookPassword, crowdsec_lapi_url: crowdsecLapiUrl, crowdsec_api_key: crowdsecApiKey, traefik_api_user: traefikApiUser, traefik_api_password: traefikApiPassword })
         });
         const data = await res.json();
         if (data.success) {
@@ -1059,6 +1071,10 @@ async function saveSettings() {
             if (crowdsecApiKey) {
                 document.getElementById('settingsCrowdSecKey').value = '';
                 document.getElementById('crowdsecKeySetHint')?.classList.remove('hidden');
+            }
+            if (traefikApiPassword) {
+                document.getElementById('settingsApiPassword').value = '';
+                document.getElementById('apiPasswordSetHint')?.classList.remove('hidden');
             }
             if (typeof availableDomains !== 'undefined') {
                 availableDomains.length = 0;
@@ -1080,13 +1096,20 @@ async function testTraefikApi() {
     result.textContent = 'Testing…';
     result.style.color = 'var(--muted)';
     try {
-        const res = await fetch('/api/traefik/version');
-        const d   = await res.json();
-        if (d && d.Version) {
-            result.textContent = `✓ Connected - Traefik v${d.Version}`;
+        const url  = document.getElementById('settingsApiUrl')?.value.trim() || '';
+        const user = document.getElementById('settingsApiUser')?.value.trim() || '';
+        const pw   = document.getElementById('settingsApiPassword')?.value || '';
+        const res  = await fetch('/api/settings/test-connection', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json', 'X-CSRF-Token': _csrfHeaders()['X-CSRF-Token']},
+            body: JSON.stringify({ url, user, password: pw })
+        });
+        const d = await res.json();
+        if (d.ok) {
+            result.textContent = `✓ Connected - Traefik v${d.version}`;
             result.style.color = 'var(--green)';
         } else {
-            result.textContent = '✗ No response from API';
+            result.textContent = `✗ ${d.error || 'No response from API'}`;
             result.style.color = 'var(--red)';
         }
     } catch(e) {
