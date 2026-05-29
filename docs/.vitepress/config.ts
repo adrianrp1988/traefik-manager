@@ -32,8 +32,9 @@ export default defineConfig({
       { text: 'API', link: '/api' },
       { text: 'UI Examples', link: '/ui-examples' },
       {
-        text: 'v1.2.0',
+        text: 'v1.3.0',
         items: [
+          { text: 'v1.3.0', link: 'https://github.com/chr0nzz/traefik-manager/releases/tag/v1.3.0' },
           { text: 'v1.2.0', link: 'https://github.com/chr0nzz/traefik-manager/releases/tag/v1.2.0' },
           { text: 'v1.1.0', link: 'https://github.com/chr0nzz/traefik-manager/releases/tag/v1.1.0' },
           { text: 'v1.0.4', link: 'https://github.com/chr0nzz/traefik-manager/releases/tag/v1.0.4' },
@@ -98,6 +99,7 @@ export default defineConfig({
           { text: 'Certificates', link: '/tab-certs' },
           { text: 'Plugins', link: '/tab-plugins' },
           { text: 'Logs', link: '/tab-logs' },
+          { text: 'CrowdSec', link: '/tab-crowdsec' },
         ],
       },
       {

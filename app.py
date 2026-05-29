@@ -6,6 +6,8 @@ import secrets
 import logging
 import threading
 import requests
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 from collections import deque
 from datetime import datetime, timezone, timedelta
 from functools import wraps
@@ -19,7 +21,7 @@ from io import StringIO
 from cryptography.fernet import Fernet, InvalidToken
 
 GITHUB_REPO  = "chr0nzz/traefik-manager"
-APP_VERSION  = "1.2.0"
+APP_VERSION  = "1.3.0"
 
 
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
@@ -283,7 +285,7 @@ def _get_signal_file_path() -> str:
     return os.environ.get('SIGNAL_FILE_PATH', '/signals/restart.sig')
 
 
-OPTIONAL_TABS = ['dashboard', 'routemap', 'docker', 'kubernetes', 'swarm', 'nomad', 'ecs', 'consulcatalog', 'redis', 'etcd', 'consul', 'zookeeper', 'http_provider', 'file_external', 'certs', 'plugins', 'logs']
+OPTIONAL_TABS = ['dashboard', 'routemap', 'docker', 'kubernetes', 'swarm', 'nomad', 'ecs', 'consulcatalog', 'redis', 'etcd', 'consul', 'zookeeper', 'http_provider', 'file_external', 'certs', 'crowdsec', 'plugins', 'logs']
 
 def load_settings() -> dict:
     defaults = {
@@ -316,6 +318,10 @@ def load_settings() -> dict:
         'webhook_type':         'discord',
         'webhook_username':     '',
         'webhook_password':     '',
+        'crowdsec_lapi_url':    '',
+        'crowdsec_api_key':     '',
+        'traefik_api_user':     os.environ.get('TRAEFIK_API_USER', ''),
+        'traefik_api_password': os.environ.get('TRAEFIK_API_PASSWORD', ''),
     }
     if not os.path.exists(SETTINGS_PATH):
         return defaults
@@ -409,6 +415,14 @@ def load_settings() -> dict:
             merged['webhook_username'] = str(data['webhook_username']).strip()
         if 'webhook_password' in data:
             merged['webhook_password'] = _decrypt_otp_secret(str(data['webhook_password']))
+        if 'crowdsec_lapi_url' in data:
+            merged['crowdsec_lapi_url'] = str(data['crowdsec_lapi_url']).strip()
+        if 'crowdsec_api_key' in data:
+            merged['crowdsec_api_key'] = _decrypt_otp_secret(str(data['crowdsec_api_key']))
+        if 'traefik_api_user' in data:
+            merged['traefik_api_user'] = str(data['traefik_api_user']).strip()
+        if 'traefik_api_password' in data:
+            merged['traefik_api_password'] = _decrypt_otp_secret(str(data['traefik_api_password']))
         return merged
     except Exception as e:
         logger.warning(f"Could not load manager.yml, using defaults: {e}")
@@ -429,7 +443,9 @@ def save_settings(domains, cert_resolver, traefik_api_url,
                   oidc_client_secret=None, oidc_display_name=None,
                   oidc_allowed_emails=None, oidc_allowed_groups=None,
                   oidc_groups_claim=None, webhook_url=None, webhook_type=None,
-                  webhook_username=None, webhook_password=None):
+                  webhook_username=None, webhook_password=None,
+                  crowdsec_lapi_url=None, crowdsec_api_key=None,
+                  traefik_api_user=None, traefik_api_password=None):
     if visible_tabs is None:
         visible_tabs = {t: False for t in OPTIONAL_TABS}
     _cur = load_settings()
@@ -477,6 +493,14 @@ def save_settings(domains, cert_resolver, traefik_api_url,
         webhook_username = _cur.get('webhook_username', '')
     if webhook_password is None:
         webhook_password = _cur.get('webhook_password', '')
+    if crowdsec_lapi_url is None:
+        crowdsec_lapi_url = _cur.get('crowdsec_lapi_url', '')
+    if crowdsec_api_key is None:
+        crowdsec_api_key = _cur.get('crowdsec_api_key', '')
+    if traefik_api_user is None:
+        traefik_api_user = _cur.get('traefik_api_user', '')
+    if traefik_api_password is None:
+        traefik_api_password = _cur.get('traefik_api_password', '')
     otp_secret = _encrypt_otp_secret(otp_secret)
     oidc_client_secret_enc = _encrypt_otp_secret(oidc_client_secret) if oidc_client_secret else ''
     os.makedirs(os.path.dirname(SETTINGS_PATH), exist_ok=True)
@@ -512,6 +536,10 @@ def save_settings(domains, cert_resolver, traefik_api_url,
             'webhook_type':         webhook_type,
             'webhook_username':     webhook_username,
             'webhook_password':     _encrypt_otp_secret(webhook_password) if webhook_password else '',
+            'crowdsec_lapi_url':    crowdsec_lapi_url,
+            'crowdsec_api_key':     _encrypt_otp_secret(crowdsec_api_key) if crowdsec_api_key else '',
+            'traefik_api_user':     traefik_api_user,
+            'traefik_api_password': _encrypt_otp_secret(traefik_api_password) if traefik_api_password else '',
         }, f)
     os.replace(tmp, SETTINGS_PATH)
     logger.info("Manager settings saved")
@@ -588,7 +616,8 @@ def _detect_self_route_domain() -> str:
             continue
         try:
             with open(cfg_path, 'r') as f:
-                data = yaml.load(f) or {}
+                sanitized, _ = _sanitize_go_templates(f.read())
+            data = yaml.load(sanitized) or {}
             routers = (data.get('http') or {}).get('routers') or {}
             services = (data.get('http') or {}).get('services') or {}
             for rname, rdata in routers.items():
@@ -979,14 +1008,16 @@ def setup():
     if request.method == 'POST':
         _check_csrf()
 
-        domains_raw       = request.form.get('domains', '').strip()
-        cert_resolver     = request.form.get('cert_resolver', '').strip()
-        traefik_api_url   = request.form.get('traefik_api_url', '').strip()
-        visible_tabs_raw  = request.form.get('visible_tabs', '{}')
-        pw                = request.form.get('password', '')
-        confirm           = request.form.get('confirm', '')
-        self_route_domain = request.form.get('self_route_domain', '').strip()
-        self_route_svc    = request.form.get('self_route_service', '').strip() or 'http://traefik-manager:5000'
+        domains_raw         = request.form.get('domains', '').strip()
+        cert_resolver       = request.form.get('cert_resolver', '').strip()
+        traefik_api_url     = request.form.get('traefik_api_url', '').strip()
+        traefik_api_user    = request.form.get('traefik_api_user', '').strip()
+        traefik_api_password = request.form.get('traefik_api_password', '')
+        visible_tabs_raw    = request.form.get('visible_tabs', '{}')
+        pw                  = request.form.get('password', '')
+        confirm             = request.form.get('confirm', '')
+        self_route_domain   = request.form.get('self_route_domain', '').strip()
+        self_route_svc      = request.form.get('self_route_service', '').strip() or 'http://traefik-manager:5000'
 
         domains = [d.strip() for d in domains_raw.split(',') if d.strip()]
 
@@ -1018,6 +1049,8 @@ def setup():
                 domains=domains,
                 cert_resolver=resolver,
                 traefik_api_url=traefik_api_url,
+                traefik_api_user=traefik_api_user,
+                traefik_api_password=traefik_api_password,
                 auth_enabled=True,
                 password_hash=pw_hash,
                 visible_tabs=visible_tabs,
@@ -1360,8 +1393,11 @@ def traefik_api_get(path):
     if not _safe_api_url(base_url):
         logger.error("traefik_api_url failed safety check")
         return None
+    u = settings.get('traefik_api_user', '')
+    p = settings.get('traefik_api_password', '')
+    auth = (u, p) if u and p else None
     try:
-        resp = requests.get(f"{base_url}{path}", timeout=3)
+        resp = requests.get(f"{base_url}{path}", timeout=3, auth=auth)
         if resp.status_code == 200:
             return resp.json()
     except Exception as e:
@@ -1430,6 +1466,59 @@ def api_entrypoints():
 @login_required
 def api_version():
     return jsonify(traefik_api_get('/api/version') or {})
+
+
+def _cs_lapi_url() -> str:
+    s = load_settings()
+    return s.get('crowdsec_lapi_url', '').strip() or os.environ.get('CROWDSEC_LAPI_URL', '').strip()
+
+def _cs_api_key() -> str:
+    s = load_settings()
+    return s.get('crowdsec_api_key', '').strip() or os.environ.get('CROWDSEC_API_KEY', '').strip()
+
+def _cs_request(method: str, path: str, **kwargs):
+    lapi = _cs_lapi_url().rstrip('/')
+    key  = _cs_api_key()
+    if not lapi or not key:
+        return None
+    try:
+        resp = requests.request(method, f"{lapi}{path}",
+                                headers={'X-Api-Key': key, 'Accept': 'application/json'},
+                                timeout=5, **kwargs)
+        resp.raise_for_status()
+        return resp.json() if resp.content else None
+    except Exception as e:
+        logger.warning(f"CrowdSec LAPI error {method} {path}: {e}")
+        return None
+
+@app.route('/api/crowdsec/decisions')
+@login_required
+def api_cs_decisions():
+    data = _cs_request('GET', '/v1/decisions?limit=200')
+    if data is None and not (_cs_lapi_url() and _cs_api_key()):
+        return jsonify({'error': 'CrowdSec not configured'}), 503
+    return jsonify(data or [])
+
+@app.route('/api/crowdsec/alerts')
+@login_required
+def api_cs_alerts():
+    data = _cs_request('GET', '/v1/alerts?limit=50')
+    if data is None and not (_cs_lapi_url() and _cs_api_key()):
+        return jsonify({'error': 'CrowdSec not configured'}), 503
+    return jsonify(data or [])
+
+@app.route('/api/crowdsec/decisions/<int:decision_id>', methods=['DELETE'])
+@csrf_protect
+@login_required
+def api_cs_unban(decision_id):
+    if not (_cs_lapi_url() and _cs_api_key()):
+        return jsonify({'error': 'CrowdSec not configured'}), 503
+    result = _cs_request('DELETE', f'/v1/decisions/{decision_id}')
+    if result is None:
+        return jsonify({'error': 'Failed to delete decision'}), 500
+    add_notification('success', f'Decision {decision_id} deleted (IP unbanned)')
+    return jsonify({'ok': True})
+
 
 @app.route('/api/ping')
 @login_required
@@ -1534,9 +1623,12 @@ def api_htpasswd():
 def api_ping():
     import time as _t
     settings = load_settings()
+    u = settings.get('traefik_api_user', '')
+    p = settings.get('traefik_api_password', '')
+    auth = (u, p) if u and p else None
     try:
         t0   = _t.monotonic()
-        resp = requests.get(f"{settings['traefik_api_url']}/ping", timeout=3)
+        resp = requests.get(f"{settings['traefik_api_url']}/ping", timeout=3, auth=auth)
         ms   = round((_t.monotonic() - t0) * 1000)
         if resp.status_code == 200:
             return jsonify({'ok': True, 'latency_ms': ms})
@@ -1845,8 +1937,11 @@ def api_setup_test_connection():
     url     = _safe_api_url(raw_url)
     if not url:
         return jsonify({'ok': False, 'error': 'Invalid URL'}), 400
+    u = str(data.get('user', '')).strip()
+    p = str(data.get('password', '')).strip()
+    auth = (u, p) if u and p else None
     try:
-        resp = requests.get(f"{url}/api/version", timeout=4)
+        resp = requests.get(f"{url}/api/version", timeout=4, auth=auth)
         if resp.status_code == 200:
             info = resp.json()
             return jsonify({'ok': True, 'version': info.get('Version', '?')})
@@ -2261,10 +2356,15 @@ def api_get_settings():
     s.pop('password_hash', None)
     s.pop('oidc_client_secret', None)
     s.pop('webhook_password', None)
-    s['auth_enabled']          = _auth_enabled()
-    s['has_password']          = _has_password_set()
-    s['auth_env_forced']       = os.environ.get('AUTH_ENABLED', '').strip().lower() in ('false', '0', 'no')
+    s.pop('crowdsec_api_key', None)
+    s.pop('traefik_api_password', None)
+    s['traefik_api_password_set'] = bool(load_settings().get('traefik_api_password', ''))
+    s['auth_enabled']             = _auth_enabled()
+    s['has_password']           = _has_password_set()
+    s['auth_env_forced']        = os.environ.get('AUTH_ENABLED', '').strip().lower() in ('false', '0', 'no')
     s['oidc_client_secret_set'] = bool(load_settings().get('oidc_client_secret', ''))
+    s['crowdsec_api_key_set']   = bool(_cs_api_key())
+    s['crowdsec_enabled']       = bool(_cs_lapi_url() and _cs_api_key())
     return jsonify(s)
 
 @app.route('/api/settings', methods=['POST'])
@@ -2284,13 +2384,21 @@ def api_save_settings():
         acme_json_path    = str(data.get('acme_json_path', '')).strip()
         access_log_path   = str(data.get('access_log_path', '')).strip()
         static_config_path = str(data.get('static_config_path', '')).strip()
-        webhook_url      = str(data.get('webhook_url', '')).strip()
-        webhook_type     = str(data.get('webhook_type', 'discord')).strip()
-        webhook_username = str(data.get('webhook_username', '')).strip()
-        webhook_password = str(data.get('webhook_password', ''))
+        webhook_url          = str(data.get('webhook_url', '')).strip()
+        webhook_type         = str(data.get('webhook_type', 'discord')).strip()
+        webhook_username     = str(data.get('webhook_username', '')).strip()
+        webhook_password     = str(data.get('webhook_password', ''))
+        crowdsec_lapi_url    = str(data.get('crowdsec_lapi_url', '')).strip()
+        crowdsec_api_key     = str(data.get('crowdsec_api_key', ''))
+        traefik_api_user     = str(data.get('traefik_api_user', '')).strip()
+        traefik_api_password = str(data.get('traefik_api_password', ''))
         existing = load_settings()
         if not webhook_password:
             webhook_password = existing.get('webhook_password', '')
+        if not crowdsec_api_key:
+            crowdsec_api_key = existing.get('crowdsec_api_key', '')
+        if not traefik_api_password:
+            traefik_api_password = existing.get('traefik_api_password', '')
         save_settings(domains, cert_resolver, traefik_api_url,
                       auth_enabled=existing['auth_enabled'],
                       password_hash=existing['password_hash'],
@@ -2301,10 +2409,16 @@ def api_save_settings():
                       webhook_url=webhook_url,
                       webhook_type=webhook_type,
                       webhook_username=webhook_username,
-                      webhook_password=webhook_password)
+                      webhook_password=webhook_password,
+                      crowdsec_lapi_url=crowdsec_lapi_url,
+                      crowdsec_api_key=crowdsec_api_key,
+                      traefik_api_user=traefik_api_user,
+                      traefik_api_password=traefik_api_password)
         result = load_settings()
         result.pop('password_hash', None)
         result.pop('oidc_client_secret', None)
+        result.pop('crowdsec_api_key', None)
+        result.pop('traefik_api_password', None)
         return jsonify({'success': True, 'settings': result})
     except Exception as e:
         logger.exception("Settings save error")
@@ -2338,9 +2452,17 @@ def api_settings_test_connection():
     url     = _safe_api_url(raw_url)
     if not url:
         return jsonify({'ok': False, 'error': 'Invalid URL'}), 400
+    u = str(data.get('user', '')).strip()
+    p = str(data.get('password', '')).strip()
+    if not p:
+        stored   = load_settings()
+        if not u:
+            u = stored.get('traefik_api_user', '')
+        p = stored.get('traefik_api_password', '')
+    auth = (u, p) if u and p else None
     logger.info(f"Connection test to {url!r} by {request.remote_addr}")
     try:
-        resp = requests.get(f"{url}/api/version", timeout=4)
+        resp = requests.get(f"{url}/api/version", timeout=4, auth=auth)
         if resp.status_code == 200:
             info = resp.json()
             return jsonify({'ok': True, 'version': info.get('Version', '?')})
@@ -2382,7 +2504,8 @@ def _find_existing_self_route(hostname: str) -> dict:
             continue
         try:
             with open(cfg_path, 'r') as f:
-                data = yaml.load(f) or {}
+                sanitized, _ = _sanitize_go_templates(f.read())
+            data = yaml.load(sanitized) or {}
             routers  = (data.get('http') or {}).get('routers') or {}
             services = (data.get('http') or {}).get('services') or {}
             for rname, rdata in routers.items():
@@ -2442,13 +2565,49 @@ def api_save_self_route():
     return jsonify({'ok': True})
 
 
+def _sanitize_go_templates(raw):
+    mapping = {}
+    counter = [0]
+    def _replace(m):
+        key = f'__TM_TEMPLATE_{counter[0]}__'
+        mapping[key] = m.group(0)
+        counter[0] += 1
+        return key
+    return re.sub(r'\{\{[^}]*\}\}', _replace, raw), mapping
+
+def _restore_go_templates(obj, mapping):
+    if not mapping:
+        return obj
+    if isinstance(obj, str):
+        for ph, orig in mapping.items():
+            obj = obj.replace(ph, orig)
+        return obj
+    if isinstance(obj, dict):
+        return {k: _restore_go_templates(v, mapping) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_restore_go_templates(item, mapping) for item in obj]
+    return obj
+
+def _load_config_display(path):
+    if not os.path.exists(path):
+        return {}
+    with open(path, 'r') as f:
+        raw = f.read()
+    sanitized, mapping = _sanitize_go_templates(raw)
+    data = yaml.load(sanitized)
+    if not data or not isinstance(data, dict):
+        return {}
+    return _restore_go_templates(data, mapping) if mapping else data
+
 def load_config(path=None):
     if path is None:
         path = CONFIG_PATH
     if not os.path.exists(path):
         return {}
     with open(path, 'r') as f:
-        data = yaml.load(f)
+        raw = f.read()
+    sanitized, _ = _sanitize_go_templates(raw)
+    data = yaml.load(sanitized)
     return data if data and isinstance(data, dict) else {}
 
 def _strip_empty_sections(config: dict) -> dict:
@@ -2465,10 +2624,19 @@ def _strip_empty_sections(config: dict) -> dict:
 def save_config(data, path=None):
     if path is None:
         path = CONFIG_PATH
+    template_map = {}
+    if os.path.exists(path):
+        with open(path, 'r') as f:
+            _, template_map = _sanitize_go_templates(f.read())
+    stream = StringIO()
+    yaml.dump(data, stream)
+    content = stream.getvalue()
+    for placeholder, original in template_map.items():
+        content = content.replace(placeholder, original)
     tmp = path + '.tmp'
     try:
         with open(tmp, 'w') as f:
-            yaml.dump(data, f)
+            f.write(content)
         shutil.copyfile(tmp, path)
     finally:
         try:
@@ -2481,6 +2649,14 @@ def save_config(data, path=None):
 def _svc_key(name):
     return name.split('@')[0] if '@' in name else name
 
+def _to_list(val, default=None):
+    if val is None:
+        return default if default is not None else []
+    if isinstance(val, list):
+        return val
+    if isinstance(val, str):
+        return [val]
+    return list(val) if hasattr(val, '__iter__') else []
 
 def _build_apps(config, config_file='', extra_http_svcs=None, extra_tcp_svcs=None, extra_udp_svcs=None, api_svc_urls=None):
     apps = []
@@ -2509,8 +2685,8 @@ def _build_apps(config, config_file='', extra_http_svcs=None, extra_tcp_svcs=Non
         insecure = bool(transports_cfg.get(transport_name, {}).get('insecureSkipVerify', False)) if transport_name else False
         apps.append({'id': app_id, 'name': rname, 'rule': rdata.get('rule', ''),
                      'service_name': svc_name, 'target': target_url,
-                     'middlewares': rdata.get('middlewares', []),
-                     'entryPoints': rdata.get('entryPoints', []), 'protocol': 'http',
+                     'middlewares': _to_list(rdata.get('middlewares')),
+                     'entryPoints': _to_list(rdata.get('entryPoints')), 'protocol': 'http',
                      'tls': bool(tls_http), 'enabled': True,
                      'passHostHeader': lb.get('passHostHeader', True),
                      'certResolver': tls_http.get('certResolver', '') if isinstance(tls_http, dict) else '',
@@ -2535,7 +2711,7 @@ def _build_apps(config, config_file='', extra_http_svcs=None, extra_tcp_svcs=Non
         tls_tcp = rdata.get('tls', {})
         apps.append({'id': app_id, 'name': rname, 'rule': rdata.get('rule', ''),
                      'service_name': svc_name, 'target': target,
-                     'middlewares': [], 'entryPoints': rdata.get('entryPoints', []),
+                     'middlewares': [], 'entryPoints': _to_list(rdata.get('entryPoints')),
                      'protocol': 'tcp', 'tls': bool(tls_tcp), 'enabled': True,
                      'certResolver': tls_tcp.get('certResolver', '') if isinstance(tls_tcp, dict) else '',
                      'configFile': config_file, 'provider': 'file'})
@@ -2557,7 +2733,7 @@ def _build_apps(config, config_file='', extra_http_svcs=None, extra_tcp_svcs=Non
         app_id = f"{config_file}::{rname}" if (MULTI_CONFIG and config_file) else rname
         apps.append({'id': app_id, 'name': rname, 'rule': '',
                      'service_name': svc_name, 'target': target,
-                     'middlewares': [], 'entryPoints': rdata.get('entryPoints', []),
+                     'middlewares': [], 'entryPoints': _to_list(rdata.get('entryPoints')),
                      'protocol': 'udp', 'tls': False, 'enabled': True,
                      'configFile': config_file, 'provider': 'file'})
     return apps
@@ -2648,7 +2824,7 @@ def _entrypoint_mw_map() -> dict:
 def _build_all_apps(include_external=True, include_internal=False):
     all_apps = []
     all_middlewares = []
-    loaded = [(os.path.basename(p) if (MULTI_CONFIG or ACTIVE_CONFIG_DIR) else '', load_config(p)) for p in CONFIG_PATHS]
+    loaded = [(os.path.basename(p) if (MULTI_CONFIG or ACTIVE_CONFIG_DIR) else '', _load_config_display(p)) for p in CONFIG_PATHS]
     combined_http = {}
     combined_tcp  = {}
     combined_udp  = {}
@@ -2883,6 +3059,131 @@ def api_toggle_route(route_id):
         return jsonify({'ok': False, 'message': 'Failed to toggle route.'}), 500
 
 
+@app.route('/api/routes/<path:route_id>/raw', methods=['GET'])
+@login_required
+def api_route_raw_get(route_id):
+    rname = route_id.split('::', 1)[1] if '::' in route_id else route_id
+    cf    = route_id.split('::', 1)[0] if '::' in route_id else ''
+
+    target_path   = _resolve_config_path(cf) if cf else None
+    paths_to_scan = [target_path] if target_path else CONFIG_PATHS
+
+    for p in paths_to_scan:
+        config = load_config(p)
+        for proto in ('http', 'tcp', 'udp'):
+            routers = config.get(proto, {}).get('routers', {})
+            if rname in routers:
+                router   = routers[rname]
+                svc_name = router.get('service', rname)
+                svc_key  = _svc_key(svc_name)
+                svc      = config.get(proto, {}).get('services', {}).get(svc_key)
+                out      = {proto: {'routers': {rname: dict(router)}}}
+                if svc is not None:
+                    out[proto]['services'] = {svc_name: dict(svc)}
+                stream = StringIO()
+                yaml.dump(out, stream)
+                raw = stream.getvalue()
+                with open(p, 'r') as f:
+                    _, template_map = _sanitize_go_templates(f.read())
+                for placeholder, original in template_map.items():
+                    raw = raw.replace(placeholder, original)
+                return jsonify({'raw': raw, 'configFile': os.path.basename(p), 'proto': proto})
+
+    return jsonify({'error': 'Route not found'}), 404
+
+
+@app.route('/api/routes/<path:route_id>/raw', methods=['POST'])
+@csrf_protect
+@login_required
+def api_route_raw_save(route_id):
+    body    = request.get_json(force=True, silent=True) or {}
+    content = body.get('content', '')
+    if not content.strip():
+        return jsonify({'ok': False, 'error': 'No content'}), 400
+
+    rname = route_id.split('::', 1)[1] if '::' in route_id else route_id
+    cf    = route_id.split('::', 1)[0] if '::' in route_id else ''
+
+    user_map     = {}
+    user_counter = [0]
+    def _replace_user(m):
+        key = f'__TM_USER_{user_counter[0]}__'
+        user_map[key] = m.group(0)
+        user_counter[0] += 1
+        return key
+    sanitized_user = re.sub(r'\{\{[^}]*\}\}', _replace_user, content)
+
+    try:
+        new_data = yaml.load(sanitized_user)
+        if not isinstance(new_data, dict):
+            raise ValueError("Expected a YAML mapping")
+    except Exception as e:
+        return jsonify({'ok': False, 'error': f'Invalid YAML: {e}'}), 400
+
+    target_path = _resolve_config_path(cf) if cf else None
+    if not target_path:
+        for p in CONFIG_PATHS:
+            cfg = load_config(p)
+            for proto in ('http', 'tcp', 'udp'):
+                if rname in cfg.get(proto, {}).get('routers', {}):
+                    target_path = p
+                    break
+            if target_path:
+                break
+    if not target_path:
+        return jsonify({'ok': False, 'error': 'Route not found'}), 404
+
+    config = load_config(target_path)
+
+    for proto in ('http', 'tcp', 'udp'):
+        proto_cfg  = config.get(proto, {})
+        old_router = proto_cfg.get('routers', {}).pop(rname, None)
+        if old_router:
+            old_svc = _svc_key(old_router.get('service', rname))
+            proto_cfg.get('services', {}).pop(old_svc, None)
+
+    for proto in ('http', 'tcp', 'udp'):
+        new_proto = new_data.get(proto, {})
+        if not new_proto:
+            continue
+        section = config.setdefault(proto, {})
+        new_routers  = new_proto.get('routers', {})
+        new_services = new_proto.get('services', {})
+        if new_routers:
+            section.setdefault('routers', {}).update(new_routers)
+        if new_services:
+            section.setdefault('services', {}).update(new_services)
+
+    try:
+        create_backup(target_path)
+        file_map = {}
+        if os.path.exists(target_path):
+            with open(target_path, 'r') as f:
+                _, file_map = _sanitize_go_templates(f.read())
+        combined_map = {**file_map, **user_map}
+        stream = StringIO()
+        yaml.dump(_strip_empty_sections(config), stream)
+        yaml_content = stream.getvalue()
+        for placeholder, original in combined_map.items():
+            yaml_content = yaml_content.replace(placeholder, original)
+        tmp = target_path + '.tmp'
+        try:
+            with open(tmp, 'w') as f:
+                f.write(yaml_content)
+            shutil.copyfile(tmp, target_path)
+        finally:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+        logger.info(f"Route '{rname}' raw config saved: {target_path}")
+        add_notification(f"Route '{rname}' updated", 'success')
+        return jsonify({'ok': True})
+    except Exception as e:
+        logger.exception("Route raw save error")
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+
 @app.route('/')
 @login_required
 def index():
@@ -2900,7 +3201,8 @@ def index():
                            multi_config=MULTI_CONFIG,
                            config_paths_list=config_paths_list,
                            config_dir_set=bool(ACTIVE_CONFIG_DIR),
-                           cert_resolvers=cert_resolvers)
+                           cert_resolvers=cert_resolvers,
+                           crowdsec_enabled=bool(_cs_lapi_url() and _cs_api_key()))
 
 
 def _is_fetch():
@@ -3191,11 +3493,15 @@ def oidc_login():
     session['oidc_nonce'] = nonce
     redirect_uri = url_for('oidc_callback', _external=True)
     from urllib.parse import urlencode
+    scopes = ['openid', 'email', 'profile']
+    groups_claim = s.get('oidc_groups_claim', '').strip()
+    if s.get('oidc_allowed_groups', '').strip() and groups_claim and groups_claim not in scopes:
+        scopes.append(groups_claim)
     params = urlencode({
         'response_type': 'code',
         'client_id':     s.get('oidc_client_id', ''),
         'redirect_uri':  redirect_uri,
-        'scope':         'openid email profile',
+        'scope':         ' '.join(scopes),
         'state':         state,
         'nonce':         nonce,
     })

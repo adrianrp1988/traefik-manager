@@ -31,10 +31,14 @@ Every template switches to **Wizard** mode - a structured form with labeled fiel
 
 | Category | Templates |
 |---|---|
-| Auth | Basic Auth, Digest Auth, Forward Auth, Forward Auth (Authentik), Forward Auth (Authelia) |
+| Auth | Basic Auth, Digest Auth, Forward Auth, Forward Auth (Authentik), Forward Auth (Authelia), Forward Auth (Gatekeeper) |
 | Security | IP Allow List, IP Allow List (Private Ranges), Rate Limit, Secure Headers, CORS Headers |
 | Routing | Redirect to HTTPS, Redirect Regex, Strip Prefix, Add Prefix, Replace Path |
 | Advanced | Gzip Compress, Retry, Circuit Breaker, Buffering, Middleware Chain, In-Flight Limit |
+
+### Middleware ordering in routes
+
+When attaching middlewares to a route, order matters - Traefik processes them left to right. The middleware chip selector in the route form shows selected middlewares first (numbered by position) with a divider before unselected ones, so you can see the processing order at a glance.
 
 ## Editing a middleware
 

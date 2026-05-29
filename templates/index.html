@@ -46,34 +46,12 @@
         html:not([data-tm-pref]) .tm-theme-icon[data-pref="dark"] { display: inline; }
         .tab-optional { display: none; }
     </style>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        tailwind.config = {
-            darkMode: 'class',
-            theme: {
-                extend: {
-                    colors: {
-                        traefik: {
-                            blue: '#24a1de',
-                            dark: '#0d1117',
-                            card: '#161b22',
-                            border: '#30363d',
-                            muted: '#8b949e',
-                        }
-                    },
-                    fontFamily: {
-                        mono: ['"JetBrains Mono"', 'monospace'],
-                        sans: ['"Inter"', 'sans-serif'],
-                    }
-                }
-            }
-        }
-    </script>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-    <script src="https://unpkg.com/@phosphor-icons/web"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-    <link rel="stylesheet" href="/static/css/app.css?v=0.7.0">
+    <link rel="stylesheet" href="/static/vendor/fonts/inter.css">
+    <link rel="stylesheet" href="/static/vendor/fonts/jetbrains-mono.css">
+    <link rel="stylesheet" href="/static/vendor/phosphor.css">
+    <link rel="stylesheet" href="/static/css/app.css?v=1.3.0">
+    <link rel="stylesheet" href="/static/css/tailwind.css">
+    <script src="/static/vendor/qrcode.min.js"></script>
 </head>
 <body class="min-h-screen font-sans">
 
@@ -101,6 +79,20 @@
         </div>
     </div>
     <div id="staticYamlPopoutEditor" style="flex:1;min-height:0;"></div>
+</div>
+
+<div id="routeYamlPopout" style="display:none;position:fixed;inset:0;z-index:9998;background:var(--bg);flex-direction:column;">
+    <div class="flex items-center justify-between px-6 py-3.5" style="border-bottom:1px solid var(--border);flex-shrink:0;">
+        <div class="flex items-center gap-2">
+            <i class="ph-bold ph-code" style="color:var(--blue)"></i>
+            <span class="font-semibold text-sm" id="routeYamlPopoutTitle">Raw YAML</span>
+        </div>
+        <div class="flex gap-2">
+            <button onclick="saveRouteYaml()" class="btn-primary text-xs"><i class="ph-bold ph-floppy-disk mr-1"></i>Save</button>
+            <button onclick="closeRouteYamlEditor()" class="btn-secondary text-xs"><i class="ph-bold ph-arrows-in mr-1"></i>Close</button>
+        </div>
+    </div>
+    <div id="routeYamlPopoutEditor" style="flex:1;min-height:0;"></div>
 </div>
 
 <div id="traefikRestartOverlay" style="display:none;position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,0.75);backdrop-filter:blur(4px);flex-direction:column;align-items:center;justify-content:center;gap:16px">
@@ -290,6 +282,12 @@
                 <span class="badge badge-muted" id="certsTabCount">-</span>
             </span>
         </button>
+        <button onclick="switchTab('crowdsec')" id="btn-crowdsec" class="tab-btn tab-optional" data-tab="crowdsec">
+            <span class="flex items-center gap-2">
+                <i class="ph-bold ph-shield-slash"></i>
+                CrowdSec
+            </span>
+        </button>
         <button onclick="switchTab('plugins')" id="btn-plugins" class="tab-btn tab-optional" data-tab="plugins">
             <span class="flex items-center gap-2">
                 <i class="ph-bold ph-puzzle-piece"></i>
@@ -354,7 +352,9 @@
 
     {% include 'tabs/tab_certs.html' %}
 
-    
+    {% include 'tabs/tab_crowdsec.html' %}
+
+
     {% include 'tabs/tab_plugins.html' %}
 
     
@@ -426,7 +426,7 @@ async function _fixSelfRouteEp(fixEp) {
     } catch(e) { showToast('Failed to update self-route', 'error'); }
 }
 
-const OPTIONAL_TABS = ['dashboard', 'routemap', 'docker', 'kubernetes', 'swarm', 'nomad', 'ecs', 'consulcatalog', 'redis', 'etcd', 'consul', 'zookeeper', 'http_provider', 'file_external', 'certs', 'plugins', 'logs'];
+const OPTIONAL_TABS = ['dashboard', 'routemap', 'docker', 'kubernetes', 'swarm', 'nomad', 'ecs', 'consulcatalog', 'redis', 'etcd', 'consul', 'zookeeper', 'http_provider', 'file_external', 'certs', 'crowdsec', 'plugins', 'logs'];
 
 let _visibleTabsCache = {};
 
@@ -495,6 +495,7 @@ function switchTab(tab) {
     if (tab === 'http_provider') refreshHttpProviderTab();
     if (tab === 'file_external') refreshFileExternalTab();
     if (tab === 'certs')         refreshCertsTab();
+    if (tab === 'crowdsec')      refreshCrowdSecTab();
     if (tab === 'plugins')       refreshPluginsTab();
     if (tab === 'logs')          refreshLogs();
     _initMobileFilterBars();
@@ -831,7 +832,7 @@ function setMwMode(mode) {
     }
 }
 
-const _wizardTemplates = new Set(['basicAuth','digestAuth','forwardAuth','forwardAuthAuthentik','forwardAuthAuthelia','ipAllowList','ipAllowListPrivate','rateLimit','secureHeaders','corsHeaders','redirectScheme','redirectRegex','stripPrefix','addPrefix','replacePath','compress','retry','circuitBreaker','buffering','chain','inFlightReq']);
+const _wizardTemplates = new Set(['basicAuth','digestAuth','forwardAuth','forwardAuthAuthentik','forwardAuthAuthelia','forwardAuthGatekeeper','ipAllowList','ipAllowListPrivate','rateLimit','secureHeaders','corsHeaders','redirectScheme','redirectRegex','stripPrefix','addPrefix','replacePath','compress','retry','circuitBreaker','buffering','chain','inFlightReq']);
 
 const _wizKeyMap = {
     forwardAuthAuthentik: 'forwardAuth', forwardAuthAuthelia: 'forwardAuth',
@@ -844,13 +845,19 @@ function _showMwWizard(tpl) {
     if (!tpl || !_wizardTemplates.has(tpl)) { if (none) none.style.display = ''; return; }
     const key = _wizKeyMap[tpl] || tpl;
     const sec = document.getElementById('mwWiz-' + key);
-    if (sec) sec.style.display = '';
+    if (sec) {
+        sec.style.display = '';
+        sec.querySelectorAll('input:not([type=checkbox]):not([type=radio]), textarea').forEach(el => { el.value = ''; });
+        sec.querySelectorAll('input[type=checkbox]').forEach(el => { el.checked = el.defaultChecked; });
+    }
     if (tpl === 'forwardAuthAuthentik') {
         const el = document.getElementById('wizFaAddress'); if (el) el.value = 'http://authentik-server:9000/outpost.goauthentik.io/auth/traefik';
         const hd = document.getElementById('wizFaHeaders'); if (hd) hd.value = 'X-authentik-username\nX-authentik-groups\nX-authentik-email\nX-authentik-name\nX-authentik-uid';
     } else if (tpl === 'forwardAuthAuthelia') {
         const el = document.getElementById('wizFaAddress'); if (el) el.value = 'http://authelia:9091/api/authz/forward-auth';
         const hd = document.getElementById('wizFaHeaders'); if (hd) hd.value = 'Remote-User\nRemote-Groups\nRemote-Name\nRemote-Email';
+    } else if (tpl === 'forwardAuthGatekeeper') {
+        const hd = document.getElementById('wizGkHeaders'); if (hd) hd.value = 'X-Auth-User\nX-Auth-Email\nX-Auth-Groups';
     } else if (tpl === 'ipAllowListPrivate') {
         const el = document.getElementById('wizIpCidrs'); if (el) el.value = '10.0.0.0/8\n172.16.0.0/12\n192.168.0.0/16\n127.0.0.1/32';
     }
@@ -880,6 +887,15 @@ function buildYamlFromWizard() {
         const addr  = _val('wizFaAddress');
         const trust = _chk('wizFaTrust', true);
         const hdrs  = _lines('wizFaHeaders');
+        yaml = 'forwardAuth:\n  address: "' + addr + '"\n  trustForwardHeader: ' + trust;
+        if (hdrs.length) yaml += '\n  authResponseHeaders:\n' + hdrs.map(h => '    - "' + h + '"').join('\n');
+
+    } else if (key === 'forwardAuthGatekeeper') {
+        const url    = _val('wizGkUrl').replace(/\/+$/, '');
+        const policy = _val('wizGkPolicy');
+        const addr   = url ? url + '/auth/verify' + (policy ? '?policy=' + policy : '') : '';
+        const trust  = _chk('wizGkTrust', false);
+        const hdrs   = _lines('wizGkHeaders');
         yaml = 'forwardAuth:\n  address: "' + addr + '"\n  trustForwardHeader: ' + trust;
         if (hdrs.length) yaml += '\n  authResponseHeaders:\n' + hdrs.map(h => '    - "' + h + '"').join('\n');
 
@@ -924,8 +940,7 @@ function buildYamlFromWizard() {
         yaml = 'redirectScheme:\n  scheme: ' + _val('wizRsScheme','https') + '\n  permanent: ' + _chk('wizRsPermanent',true);
 
     } else if (key === 'redirectRegex') {
-        const repl = _val('wizRrReplacement').replace(/\$/g, '$${');
-        yaml = 'redirectRegex:\n  regex: "' + _val('wizRrRegex') + '"\n  replacement: "' + repl + '"\n  permanent: ' + _chk('wizRrPermanent',true);
+        yaml = 'redirectRegex:\n  regex: "' + _val('wizRrRegex') + '"\n  replacement: "' + _val('wizRrReplacement') + '"\n  permanent: ' + _chk('wizRrPermanent',true);
 
     } else if (key === 'stripPrefix') {
         const prefixes = _lines('wizSpPrefixes');
@@ -1107,6 +1122,7 @@ async function refreshRoutes() {
 async function pingAllRoutes() {
     const cards = Array.from(document.querySelectorAll('.route-card')).filter(c => c.dataset.protocol === 'http');
     const pingable = cards.filter(c => {
+        if (c.dataset.enabled === 'false') return false;
         const d = (c.dataset.domains || '').split('|').find(d => d && !d.includes('{') && !d.includes('*'));
         return !!d;
     });
@@ -1299,6 +1315,7 @@ function renderRouteGrid(apps) {
         const insecureBadge = app.insecureSkipVerify ? `<span class="badge" style="font-size:9px;background:rgba(240,180,0,0.12);color:#d4a017;border:1px solid rgba(240,180,0,0.3)" title="insecureSkipVerify enabled"><i class="ph-bold ph-warning"></i> TLS skip</span>` : '';
         const openLink = (proto === 'http' && domain && !domain.includes('{') && !domain.includes('*') && !domain.includes('HostRegexp'))
             ? `<a href="https://${domain}" target="_blank" class="pill-btn pill-btn-blue" title="Open site"><i class="ph-bold ph-arrow-square-out text-sm"></i></a>` : '';
+        const openUrl  = (proto === 'http' && domain && !domain.includes('{') && !domain.includes('*') && !domain.includes('HostRegexp')) ? 'https://' + domain : '';
         const epBadges = (app.entryPoints || []).map(ep => '<span class="badge badge-muted" style="font-size:9px">' + _esc(ep) + '</span>').join('');
         const mwBadges   = (app.middlewares || []).map(mw => `<span class="badge" style="background:rgba(163,113,247,0.1);color:var(--purple);border:1px solid rgba(163,113,247,0.25)">${_esc(mw)}</span>`).join('');
         const epMwBadges = (app.entrypointMiddlewares || []).map(mw => `<span class="badge badge-muted" title="Applied via entrypoint">${_esc(mw)} <span style="font-size:9px;opacity:0.6">ep</span></span>`).join('');
@@ -1329,9 +1346,9 @@ function renderRouteGrid(apps) {
                 : `<div style="display:flex;align-items:center;gap:4px"><span class="text-xs font-mono truncate" style="color:var(--blue)">${_esc(domain || app.rule)}</span>${_copyBtn(domain || app.rule,'blue')}</div>`;
         if (_routeViewMode === 'list') {
             const epCompact = (app.entryPoints || []).slice(0, 2).map(ep => `<span class="badge badge-muted" style="font-size:9px">${_esc(ep)}</span>`).join('');
-            return `<div class="svc-list-row route-list-grid route-card${enabled ? '' : ' opacity-50'}" style="${bulkOutline}" ${dataAttrs}><div class="svc-list-col-status" style="display:flex;align-items:center;gap:6px">${bulkCheckbox}<span class="svc-status-dot" style="background:${enabled ? 'var(--green)' : 'var(--muted)'}"></span></div><div style="display:flex;align-items:center;gap:4px"><span class="badge ${badgeClass}" style="font-size:9px">${proto.toUpperCase()}</span>${tlsBadge}${insecureBadge}</div><div class="svc-list-col-name">${_esc(app.name)}<div class="text-xs font-mono truncate" style="color:var(--muted);margin-top:1px">${_esc(app.service_name)}</div></div><div style="display:flex;flex-wrap:wrap;gap:2px;align-items:center">${listDomainDisplay}</div><div style="display:flex;align-items:center;gap:4px"><div class="text-xs font-mono truncate" style="color:var(--green)">${_esc(app.target)}</div><button onclick="event.stopPropagation();_copyToClipboard('${_esc(app.target)}')" title="Copy" style="background:none;border:none;cursor:pointer;padding:2px;color:var(--muted);flex-shrink:0;line-height:1;border-radius:3px" onmouseover="this.style.color='var(--green)'" onmouseout="this.style.color='var(--muted)'"><svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 256 256" fill="currentColor"><path d="M216,32H88a8,8,0,0,0-8,8V80H40a8,8,0,0,0-8,8V216a8,8,0,0,0,8,8H168a8,8,0,0,0,8-8V176h40a8,8,0,0,0,8-8V40A8,8,0,0,0,216,32Zm-56,176H48V96H160Zm48-48H176V88a8,8,0,0,0-8-8H96V48H208Z"/></svg></button></div><div style="display:flex;align-items:center;gap:3px">${epCompact}</div><div class="flex items-center gap-1 flex-shrink-0" onclick="event.stopPropagation()"><button type="button" onclick="openRouteDetailFromCard(this.closest('[data-routekey]'))" class="pill-btn pill-btn-blue" title="View details"><i class="ph-bold ph-info text-sm"></i></button>${openLink}<button type="button" onclick="deleteRoute('${_esc(app.id)}'${cfArg})" class="pill-btn pill-btn-red" title="Delete"><i class="ph-bold ph-trash text-sm"></i></button><button type="button" data-app='${appJson}' onclick="handleEdit(this)" class="pill-btn pill-btn-blue" title="Edit"><i class="ph-bold ph-pencil-simple text-sm"></i></button>${toggleBtn}</div></div>`;
+            return `<div class="svc-list-row route-list-grid route-card${enabled ? '' : ' opacity-50'}" style="${bulkOutline}" ${dataAttrs}><div class="svc-list-col-status" style="display:flex;align-items:center;gap:6px">${bulkCheckbox}<span class="svc-status-dot" style="background:${enabled ? 'var(--green)' : 'var(--muted)'}"></span></div><div style="display:flex;align-items:center;gap:4px"><span class="badge ${badgeClass}" style="font-size:9px">${proto.toUpperCase()}</span>${tlsBadge}${insecureBadge}</div><div class="svc-list-col-name">${_esc(app.name)}<div class="text-xs font-mono truncate" style="color:var(--muted);margin-top:1px">${_esc(app.service_name)}</div></div><div style="display:flex;flex-wrap:wrap;gap:2px;align-items:center">${listDomainDisplay}</div><div style="display:flex;align-items:center;gap:4px"><div class="text-xs font-mono truncate" style="color:var(--green)">${_esc(app.target)}</div><button onclick="event.stopPropagation();_copyToClipboard('${_esc(app.target)}')" title="Copy" style="background:none;border:none;cursor:pointer;padding:2px;color:var(--muted);flex-shrink:0;line-height:1;border-radius:3px" onmouseover="this.style.color='var(--green)'" onmouseout="this.style.color='var(--muted)'"><svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 256 256" fill="currentColor"><path d="M216,32H88a8,8,0,0,0-8,8V80H40a8,8,0,0,0-8,8V216a8,8,0,0,0,8,8H168a8,8,0,0,0,8-8V176h40a8,8,0,0,0,8-8V40A8,8,0,0,0,216,32Zm-56,176H48V96H160Zm48-48H176V88a8,8,0,0,0-8-8H96V48H208Z"/></svg></button></div><div style="display:flex;align-items:center;gap:3px">${epCompact}</div><div class="flex items-center gap-1 flex-shrink-0" onclick="event.stopPropagation()"><button type="button" data-app='${appJson}' data-openurl="${openUrl}" onclick="event.stopPropagation();_openRouteMenu(event,this)" class="pill-btn pill-btn-blue" title="More"><i class="ph-bold ph-dots-three text-sm"></i></button><button type="button" data-app='${appJson}' onclick="handleEdit(this)" class="pill-btn pill-btn-blue" title="Edit"><i class="ph-bold ph-pencil-simple text-sm"></i></button>${toggleBtn}</div></div>`;
         }
-        return `<div class="card route-card${enabled ? '' : ' opacity-50'}" style="${bulkOutline}" ${dataAttrs}><div class="route-card-inner p-4 pb-2"><div class="flex justify-between items-start mb-3"><div class="flex-1 min-w-0"><div class="flex items-center gap-2 mb-0.5">${bulkCheckbox}<span class="badge ${badgeClass}">${proto.toUpperCase()}</span>${tlsBadge}${insecureBadge}<span class="status-dot status-checking" title="Checking..."></span></div><h3 class="font-bold text-sm mt-1.5 truncate transition-colors" style="color:var(--text)">${_esc(app.name)}</h3><div class="text-xs font-mono truncate" style="color:var(--muted)">${_esc(app.service_name)}</div></div><div class="flex items-center gap-1.5 ml-2 flex-shrink-0" onclick="event.stopPropagation()"><button type="button" onclick="openRouteDetailFromCard(this.closest('.route-card'))" class="pill-btn pill-btn-blue" title="View details"><i class="ph-bold ph-info text-sm"></i></button>${openLink}<button type="button" onclick="deleteRoute('${_esc(app.id)}'${cfArg})" class="pill-btn pill-btn-red" title="Delete"><i class="ph-bold ph-trash text-sm"></i></button><button type="button" data-app='${appJson}' onclick="handleEdit(this)" class="pill-btn pill-btn-blue" title="Edit"><i class="ph-bold ph-pencil-simple text-sm"></i></button>${toggleBtn}</div></div><div class="space-y-2">${proto === 'http' ? httpBody : tcpBody}</div>${cfBadge}</div></div>`;
+        return `<div class="card route-card${enabled ? '' : ' opacity-50'}" style="${bulkOutline}" ${dataAttrs}><div class="route-card-inner p-4 pb-2"><div class="flex justify-between items-start mb-3"><div class="flex-1 min-w-0"><div class="flex items-center gap-2 mb-0.5">${bulkCheckbox}<span class="badge ${badgeClass}">${proto.toUpperCase()}</span>${tlsBadge}${insecureBadge}<span class="status-dot status-checking" title="Checking..."></span></div><h3 class="font-bold text-sm mt-1.5 truncate transition-colors" style="color:var(--text)">${_esc(app.name)}</h3><div class="text-xs font-mono truncate" style="color:var(--muted)">${_esc(app.service_name)}</div></div><div class="flex items-center gap-1.5 ml-2 flex-shrink-0" onclick="event.stopPropagation()"><button type="button" data-app='${appJson}' data-openurl="${openUrl}" onclick="event.stopPropagation();_openRouteMenu(event,this)" class="pill-btn pill-btn-blue" title="More"><i class="ph-bold ph-dots-three text-sm"></i></button><button type="button" data-app='${appJson}' onclick="handleEdit(this)" class="pill-btn pill-btn-blue" title="Edit"><i class="ph-bold ph-pencil-simple text-sm"></i></button>${toggleBtn}</div></div><div class="space-y-2">${proto === 'http' ? httpBody : tcpBody}</div>${cfBadge}</div></div>`;
     }).join('');
 
     if (_routeViewMode === 'list') {
@@ -1376,10 +1393,15 @@ function renderMwGrid(middlewares) {
     filterMw();
 }
 
+let _backdropMd = null;
+document.addEventListener('mousedown', e => { _backdropMd = e.target; });
+function _onBackdropClick(e, fn) {
+    if (e.target === e.currentTarget && _backdropMd === e.currentTarget) fn();
+}
+
 ['appModal','mwModal'].forEach(id => {
-    document.getElementById(id).addEventListener('click', function(e) {
-        if (e.target === this) this.style.display = 'none';
-    });
+    const el = document.getElementById(id);
+    el.addEventListener('click', function(e) { _onBackdropClick(e, () => this.style.display = 'none'); });
 });
 
 const availableDomains = {{ domains | tojson | safe }};
@@ -1507,11 +1529,18 @@ async function _initMiddlewareChips(selectedMiddlewares) {
 
     function render() {
         hidden.value = [...selected].join(', ');
-        container.innerHTML = mws.map(mw => {
-            const on = selected.has(mw);
+        const sel   = [...selected];
+        const unsel = mws.filter(mw => !selected.has(mw));
+        const chip = (mw, i, on) => {
             const label = mw.split('@')[0];
-            return `<button type="button" onclick="_toggleMwChip('${_esc(mw)}')" style="padding:3px 10px;border-radius:9999px;border:1px solid ${on ? 'var(--purple)' : 'var(--border)'};background:${on ? 'rgba(163,113,247,0.15)' : 'transparent'};color:${on ? 'var(--purple)' : 'var(--muted)'};font-size:12px;font-family:monospace;cursor:pointer" title="${_esc(mw)}">${_esc(label)}</button>`;
-        }).join('');
+            return `<button type="button" onclick="_toggleMwChip('${_esc(mw)}')" style="padding:3px 10px;border-radius:9999px;border:1px solid ${on ? 'var(--purple)' : 'var(--border)'};background:${on ? 'rgba(163,113,247,0.15)' : 'transparent'};color:${on ? 'var(--purple)' : 'var(--muted)'};font-size:12px;font-family:monospace;cursor:pointer" title="${_esc(mw)}">${on ? (i + 1) + '. ' : ''}${_esc(label)}</button>`;
+        };
+        const divider = sel.length > 0 && unsel.length > 0
+            ? `<span style="align-self:center;width:1px;height:18px;background:var(--border);margin:0 2px;flex-shrink:0"></span>`
+            : '';
+        container.innerHTML = sel.map((mw, i) => chip(mw, i, true)).join('')
+            + divider
+            + unsel.map(mw => chip(mw, 0, false)).join('');
     }
     render();
     window._mwChipState = { selected, render };
@@ -1532,6 +1561,86 @@ function toggleTcpCertResolver(checked) {
     const row = document.getElementById('tcpCertResolverRow');
     if (row) row.style.display = checked ? '' : 'none';
 }
+
+function cloneRoute(btn) {
+    const app = JSON.parse(btn.getAttribute('data-app'));
+    openModal();
+    document.getElementById('modalTitle').innerText = 'Clone Route';
+    const proto = app.protocol || 'http';
+    setProtocol(proto);
+    if (proto === 'http') {
+        const targetScheme = (app.target || '').startsWith('https://') ? 'https' : 'http';
+        let target = (app.target || '').replace('http://','').replace('https://','');
+        const parts = target.split(':');
+        document.getElementById('targetIp').value = parts[0] || '';
+        document.getElementById('targetPort').value = parts[1] || '80';
+        _initMiddlewareChips(app.middlewares || []);
+        _initEntrypointChips('http', app.entryPoints || []);
+        document.getElementById('scheme').value = targetScheme;
+        document.getElementById('passHostHeader').checked = app.passHostHeader !== false;
+        const crHttp = document.getElementById('certResolver');
+        if (crHttp) {
+            if (!app.tls && app.tls !== false) crHttp.value = '__disabled__';
+            else if (app.certResolver) crHttp.value = app.certResolver;
+            else crHttp.value = '__none__';
+        }
+        const insecureChk = document.getElementById('insecureSkipVerify');
+        if (insecureChk) insecureChk.checked = !!app.insecureSkipVerify;
+    } else if (proto === 'tcp') {
+        const target = (app.target || '').split(':');
+        document.getElementById('targetIpTcp').value = target[0] || '';
+        document.getElementById('targetPortTcp').value = target[1] || '';
+        _initEntrypointChips('tcp', app.entryPoints || []);
+        const useTlsChk = document.getElementById('useTls');
+        if (useTlsChk) { useTlsChk.checked = !!app.tls; toggleTcpCertResolver(!!app.tls); }
+        const crTcp = document.getElementById('certResolverTcp');
+        if (crTcp && app.certResolver) crTcp.value = app.certResolver;
+    } else if (proto === 'udp') {
+        const target = (app.target || '').split(':');
+        document.getElementById('targetIpUdp').value = target[0] || '';
+        document.getElementById('targetPortUdp').value = target[1] || '';
+        _initEntrypointChips('udp', app.entryPoints || []);
+    }
+}
+
+let _routeMenuCard = null;
+
+function _openRouteMenu(event, btn) {
+    event.stopPropagation();
+    _routeMenuCard = btn.closest('.route-card');
+    const app      = JSON.parse(btn.getAttribute('data-app'));
+    const openUrl  = btn.getAttribute('data-openurl') || '';
+    const id       = app.id;
+    const cf       = app.configFile ? `'${app.configFile.replace(/'/g,"\\'")}'` : "''";
+    const appJsonStr = JSON.stringify(app).replace(/'/g,'&#39;');
+    const menu = document.getElementById('routeActionsMenu');
+    if (!menu) return;
+
+    let items = `<button class="route-ctx-item" onclick="_closeRouteMenu();openRouteDetailFromCard(_routeMenuCard)"><i class="ph-bold ph-info"></i> View Details</button>`;
+    if (openUrl) items += `<a class="route-ctx-item" href="${openUrl}" target="_blank" rel="noopener" onclick="_closeRouteMenu()"><i class="ph-bold ph-arrow-square-out"></i> Open</a>`;
+    items += `<button class="route-ctx-item" data-app='${appJsonStr}' onclick="_closeRouteMenu();cloneRoute(this)"><i class="ph-bold ph-copy"></i> Clone</button>`;
+    items += `<button class="route-ctx-item" onclick="_closeRouteMenu();openRouteYamlEditor('${id.replace(/'/g,"\\'")}')"><i class="ph-bold ph-code"></i> Raw YAML</button>`;
+    items += `<div style="height:1px;background:var(--border);margin:3px 6px"></div>`;
+    items += `<button class="route-ctx-item route-ctx-danger" onclick="_closeRouteMenu();deleteRoute('${id.replace(/'/g,"\\'")}',${cf})"><i class="ph-bold ph-trash"></i> Delete</button>`;
+    menu.innerHTML = items;
+    menu.style.display = 'block';
+
+    const rect = btn.getBoundingClientRect();
+    const menuW = 170;
+    let left = rect.right - menuW;
+    if (left < 8) left = 8;
+    let top = rect.bottom + 6;
+    if (top + 210 > window.innerHeight) top = rect.top - 210;
+    menu.style.left = left + 'px';
+    menu.style.top  = top  + 'px';
+}
+
+function _closeRouteMenu() {
+    const menu = document.getElementById('routeActionsMenu');
+    if (menu) menu.style.display = 'none';
+}
+
+document.addEventListener('click', () => _closeRouteMenu());
 
 function handleEdit(btn) {
     const app = JSON.parse(btn.getAttribute('data-app'));
@@ -1640,6 +1749,7 @@ const mwTemplates = {
     forwardAuth: `forwardAuth:\n  address: "http://auth-service:4181"\n  trustForwardHeader: true\n  authResponseHeaders:\n    - "X-Auth-User"\n    - "X-Auth-Token"`,
     forwardAuthAuthentik: `forwardAuth:\n  address: "http://authentik-server:9000/outpost.goauthentik.io/auth/traefik"\n  trustForwardHeader: true\n  authResponseHeaders:\n    - X-authentik-username\n    - X-authentik-groups\n    - X-authentik-email\n    - X-authentik-name\n    - X-authentik-uid`,
     forwardAuthAuthelia: `forwardAuth:\n  address: "http://authelia:9091/api/authz/forward-auth"\n  trustForwardHeader: true\n  authResponseHeaders:\n    - Remote-User\n    - Remote-Groups\n    - Remote-Name\n    - Remote-Email`,
+    forwardAuthGatekeeper: `forwardAuth:\n  address: "https://auth.example.com/auth/verify"\n  trustForwardHeader: false\n  authResponseHeaders:\n    - "X-Auth-User"\n    - "X-Auth-Email"\n    - "X-Auth-Groups"`,
     ipAllowList: `ipAllowList:\n  sourceRange:\n    - "127.0.0.1/32"\n    - "192.168.1.0/24"`,
     ipAllowListPrivate: `ipAllowList:\n  sourceRange:\n    - "10.0.0.0/8"\n    - "172.16.0.0/12"\n    - "192.168.0.0/16"\n    - "127.0.0.1/32"`,
     rateLimit: `rateLimit:\n  average: 100\n  burst: 50\n  period: 1s`,
@@ -1824,9 +1934,9 @@ async function loadOverviewStats() {
                 statusEl.className = 'status-dot status-unknown';
                 statusEl.title = `Status: ${apiStatus}`;
             } else {
-                
+
                 const proto = card.dataset.protocol;
-                if (proto === 'http') {
+                if (proto === 'http' && card.dataset.enabled !== 'false') {
                     const domains = (card.dataset.domains || '').split('|').filter(d => d && !d.includes('{') && !d.includes('*'));
                     const domain = domains[0];
                     if (domain) {
@@ -3335,7 +3445,7 @@ function renderPluginCards() {
             <div class="space-y-2 text-xs">
                 <div class="font-mono truncate" style="color:var(--muted)" title="${_esc(moduleName)}">${_esc(moduleName)}</div>
                 <div class="flex items-center justify-between pt-1">
-                    <span class="badge badge-muted" style="font-size:9px">v${_esc(version)}</span>
+                    <span class="badge badge-muted" style="font-size:9px">${_esc(version.startsWith('v') ? version : 'v' + version)}</span>
                     <span class="badge badge-muted" style="font-size:9px">plugin</span>
                 </div>
             </div>
@@ -3483,6 +3593,149 @@ async function refreshCertsTab() {
     } catch(e) {
         container.innerHTML = `<div class="text-center py-16 rounded-xl" style="color:var(--muted);border:1px solid var(--border)"><i class="ph-light ph-plug-slash text-5xl block mb-3 opacity-30"></i><p>Could not load certificate data</p></div>`;
     }
+}
+
+let _csDecisions = [];
+let _csAlerts    = [];
+let _csTypeFilter = 'all';
+
+async function refreshCrowdSecTab() {
+    const decEl  = document.getElementById('csDecisionsTable');
+    const altEl  = document.getElementById('csAlertsTable');
+    const statsEl = document.getElementById('crowdsecStats');
+    if (!decEl) return;
+    const spinner = `<div class="text-center py-8" style="color:var(--muted)"><i class="ph-light ph-spinner-gap text-3xl block mb-2 animate-spin opacity-40"></i><p class="text-xs">Loading...</p></div>`;
+    decEl.innerHTML = spinner;
+    altEl.innerHTML = spinner;
+    try {
+        const [decisions, alerts] = await Promise.all([
+            fetch('/api/crowdsec/decisions').then(r => r.json()),
+            fetch('/api/crowdsec/alerts').then(r => r.json()),
+        ]);
+        _csDecisions = Array.isArray(decisions) ? decisions : [];
+        _csAlerts    = Array.isArray(alerts)    ? alerts    : [];
+        _renderCsStats(_csDecisions, statsEl);
+        _csApplyFilters();
+    } catch(e) {
+        const err = `<div class="text-center py-8 text-xs" style="color:var(--muted)">Could not reach CrowdSec LAPI</div>`;
+        decEl.innerHTML = err; altEl.innerHTML = err;
+    }
+}
+
+function _setCsType(type, btn) {
+    _csTypeFilter = type;
+    document.querySelectorAll('[id^="cs-type-"]').forEach(b => b.classList.remove('active-http'));
+    btn.classList.add('active-http');
+    _csApplyFilters();
+}
+
+function _csApplyFilters() {
+    const q = (document.getElementById('csSearch')?.value || '').toLowerCase().trim();
+    const decEl = document.getElementById('csDecisionsTable');
+    const altEl = document.getElementById('csAlertsTable');
+    const filtered = _csDecisions.filter(d => {
+        if (_csTypeFilter !== 'all' && d.type !== _csTypeFilter) return false;
+        if (q && !((d.value||'').toLowerCase().includes(q) || (d.scenario||'').toLowerCase().includes(q) || (d.origin||'').toLowerCase().includes(q))) return false;
+        return true;
+    });
+    const filteredAlerts = _csAlerts.filter(a => {
+        if (!q) return true;
+        const ip = (a.source && a.source.ip) ? a.source.ip : '';
+        return ip.toLowerCase().includes(q) || (a.scenario||'').toLowerCase().includes(q);
+    });
+    if (decEl) _renderCsDecisions(filtered, decEl);
+    if (altEl) _renderCsAlerts(filteredAlerts, altEl);
+}
+
+function _renderCsStats(decisions, el) {
+    if (!el) return;
+    const bans      = decisions.filter(d => d.type === 'ban').length;
+    const captchas  = decisions.filter(d => d.type === 'captcha').length;
+    const bypasses  = decisions.filter(d => d.type === 'bypass').length;
+    const stats = [
+        { label: 'Active Bans',     value: bans,     color: 'var(--red)',    icon: 'ph-prohibit' },
+        { label: 'Captchas',        value: captchas,  color: 'var(--yellow)', icon: 'ph-puzzle-piece' },
+        { label: 'Bypasses',        value: bypasses,  color: 'var(--green)',  icon: 'ph-check-circle' },
+    ];
+    el.innerHTML = stats.map(s => `
+        <div class="rounded-xl p-4" style="background:var(--card);border:1px solid var(--border)">
+            <div class="flex items-center justify-between mb-2">
+                <span class="text-xs font-semibold uppercase tracking-wide" style="color:var(--muted)">${s.label}</span>
+                <i class="ph-bold ${s.icon} text-base" style="color:${s.color};opacity:0.7"></i>
+            </div>
+            <div class="text-3xl font-bold" style="color:${s.value > 0 ? s.color : 'var(--muted)'}">${s.value}</div>
+        </div>`).join('');
+}
+
+function _renderCsDecisions(decisions, el) {
+    document.getElementById('csDecisionCount').textContent = decisions.length;
+    if (decisions.length === 0) {
+        el.innerHTML = `<div class="text-center py-10 text-xs" style="color:var(--muted)">No active decisions</div>`;
+        return;
+    }
+    const rows = decisions.map(d => {
+        const exp = d.duration || d.until || '-';
+        const scenario = _esc(d.scenario || d.origin || '-');
+        return `<tr style="border-top:1px solid var(--border)">
+            <td class="px-3 py-2 font-mono text-xs" style="color:var(--text)">${_esc(d.value || '-')}</td>
+            <td class="px-3 py-2 text-xs"><span class="badge ${d.type === 'ban' ? 'badge-red' : d.type === 'captcha' ? 'badge-yellow' : 'badge-green'}">${_esc(d.type || '-')}</span></td>
+            <td class="px-3 py-2 text-xs" style="color:var(--muted)">${_esc(String(exp))}</td>
+            <td class="px-3 py-2 text-xs" style="color:var(--muted)">${scenario}</td>
+            <td class="px-3 py-2 text-xs text-right">
+                <button onclick="csUnban(${d.id})" class="btn-icon text-xs" title="Unban / delete decision" style="color:var(--red)"><i class="ph-bold ph-trash"></i></button>
+            </td>
+        </tr>`;
+    }).join('');
+    el.innerHTML = `<table class="w-full text-left" style="border-collapse:collapse">
+        <thead><tr style="background:var(--input-bg)">
+            <th class="px-3 py-2 text-xs font-semibold" style="color:var(--muted)">IP / Scope</th>
+            <th class="px-3 py-2 text-xs font-semibold" style="color:var(--muted)">Type</th>
+            <th class="px-3 py-2 text-xs font-semibold" style="color:var(--muted)">Duration / Until</th>
+            <th class="px-3 py-2 text-xs font-semibold" style="color:var(--muted)">Scenario</th>
+            <th class="px-3 py-2 text-xs font-semibold text-right" style="color:var(--muted)">Action</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+    </table>`;
+}
+
+function _renderCsAlerts(alerts, el) {
+    document.getElementById('csAlertCount').textContent = alerts.length;
+    if (alerts.length === 0) {
+        el.innerHTML = `<div class="text-center py-10 text-xs" style="color:var(--muted)">No recent alerts</div>`;
+        return;
+    }
+    const rows = alerts.map(a => {
+        const ts  = a.startAt ? new Date(a.startAt).toLocaleString() : '-';
+        const ip  = (a.source && a.source.ip) ? _esc(a.source.ip) : '-';
+        const scenario = _esc(a.scenario || '-');
+        const decisions = (a.decisions || []).length;
+        return `<tr style="border-top:1px solid var(--border)">
+            <td class="px-3 py-2 text-xs" style="color:var(--muted)">${_esc(ts)}</td>
+            <td class="px-3 py-2 font-mono text-xs" style="color:var(--text)">${ip}</td>
+            <td class="px-3 py-2 text-xs" style="color:var(--muted)">${scenario}</td>
+            <td class="px-3 py-2 text-xs text-center"><span class="badge badge-muted">${decisions}</span></td>
+        </tr>`;
+    }).join('');
+    el.innerHTML = `<table class="w-full text-left" style="border-collapse:collapse">
+        <thead><tr style="background:var(--input-bg)">
+            <th class="px-3 py-2 text-xs font-semibold" style="color:var(--muted)">Time</th>
+            <th class="px-3 py-2 text-xs font-semibold" style="color:var(--muted)">Source IP</th>
+            <th class="px-3 py-2 text-xs font-semibold" style="color:var(--muted)">Scenario</th>
+            <th class="px-3 py-2 text-xs font-semibold text-center" style="color:var(--muted)">Decisions</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+    </table>`;
+}
+
+async function csUnban(id) {
+    if (!confirm(`Delete decision ${id} (unban IP)?`)) return;
+    try {
+        const res = await fetch(`/api/crowdsec/decisions/${id}`, {
+            method: 'DELETE', headers: {'X-CSRFToken': _csrfToken()}
+        }).then(r => r.json());
+        if (res.ok) { addNotification('success', `Decision ${id} deleted`); refreshCrowdSecTab(); }
+        else addNotification('error', res.error || 'Failed to delete decision');
+    } catch(e) { addNotification('error', 'Request failed'); }
 }
 
 let _allLogLines    = [];
@@ -3970,10 +4223,10 @@ if (document.getElementById('toastContainer') && document.getElementById('toastC
 
 <div id="_copyToast" style="position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--text);color:var(--bg);padding:6px 16px;border-radius:8px;font-size:13px;font-weight:500;pointer-events:none;opacity:0;transition:opacity 0.2s;z-index:9999"></div>
 
-<script src="https://cdn.jsdelivr.net/npm/dagre@0.8.5/dist/dagre.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.52.0/min/vs/loader.js"></script>
+<script src="/static/vendor/dagre.min.js"></script>
+<script src="/static/vendor/monaco/vs/loader.js"></script>
 <script>
-require.config({ paths: { vs: 'https://cdn.jsdelivr.net/npm/monaco-editor@0.52.0/min/vs' } });
+require.config({ paths: { vs: '/static/vendor/monaco/vs' } });
 
 let _staticMonaco          = null;
 let _staticRawContent      = '';
@@ -4011,8 +4264,8 @@ function _monacoThemeName(isDark) { return isDark ? 'github-dark' : 'github-ligh
 function _ensureMonacoThemes() {
     if (_monacoThemesPromise) return _monacoThemesPromise;
     _monacoThemesPromise = Promise.all([
-        fetch('https://cdn.jsdelivr.net/npm/monaco-themes@0.4.4/themes/GitHub%20Light.json').then(r => r.json()),
-        fetch('https://cdn.jsdelivr.net/npm/monaco-themes@0.4.4/themes/GitHub%20Dark.json').then(r => r.json()),
+        fetch('/static/vendor/monaco-themes/GitHub%20Light.json').then(r => r.json()),
+        fetch('/static/vendor/monaco-themes/GitHub%20Dark.json').then(r => r.json()),
     ]).then(([light, dark]) => {
         monaco.editor.defineTheme('github-light', light);
         monaco.editor.defineTheme('github-dark', dark);
@@ -4167,6 +4420,81 @@ async function saveStaticConfig() {
                 const d2 = await r2.json();
                 _renderStaticSections(d2.parsed);
             } catch(e) {}
+        } else {
+            showToast(data.error || 'Save failed', 'error');
+        }
+    } catch(e) {
+        showToast('Save failed', 'error');
+    }
+}
+
+let _routeYamlMonaco  = null;
+let _routeYamlId      = '';
+let _routeYamlContent = '';
+
+function _initRouteYamlMonaco(content) {
+    const container = document.getElementById('routeYamlPopoutEditor');
+    if (!container) return;
+    if (_routeYamlMonaco) {
+        _routeYamlMonaco.setValue(content);
+        _routeYamlContent = content;
+        setTimeout(() => _routeYamlMonaco.layout(), 50);
+        return;
+    }
+    require(['vs/editor/editor.main'], function() {
+        _ensureMonacoThemes().then(() => {
+            const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+            _routeYamlMonaco = monaco.editor.create(container, {
+                value: content,
+                language: 'yaml',
+                theme: _monacoThemeName(isDark),
+                minimap: { enabled: true },
+                fontSize: 13,
+                lineNumbers: 'on',
+                scrollBeyondLastLine: false,
+                automaticLayout: true,
+                wordWrap: 'off',
+            });
+            _routeYamlContent = content;
+        });
+    });
+}
+
+async function openRouteYamlEditor(id) {
+    _routeYamlId = id;
+    const name = id.includes('::') ? id.split('::')[1] : id;
+    const title = document.getElementById('routeYamlPopoutTitle');
+    if (title) title.textContent = `Raw YAML - ${name}`;
+    try {
+        const res  = await fetch(`/api/routes/${encodeURIComponent(id)}/raw`);
+        const data = await res.json();
+        if (data.error) { showToast(data.error, 'error'); return; }
+        const overlay = document.getElementById('routeYamlPopout');
+        if (overlay) overlay.style.display = 'flex';
+        _initRouteYamlMonaco(data.raw || '');
+    } catch(e) {
+        showToast('Failed to load route YAML', 'error');
+    }
+}
+
+function closeRouteYamlEditor() {
+    const overlay = document.getElementById('routeYamlPopout');
+    if (overlay) overlay.style.display = 'none';
+}
+
+async function saveRouteYaml() {
+    const content = _routeYamlMonaco ? _routeYamlMonaco.getValue() : _routeYamlContent;
+    try {
+        const res = await fetch(`/api/routes/${encodeURIComponent(_routeYamlId)}/raw`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ..._csrfHeaders() },
+            body: JSON.stringify({ content }),
+        });
+        const data = await res.json();
+        if (data.ok) {
+            closeRouteYamlEditor();
+            refreshRoutes();
+            fetchNotifications();
         } else {
             showToast(data.error || 'Save failed', 'error');
         }
@@ -5054,5 +5382,6 @@ setTheme = function(theme) {
 };
 </script>
 
+<div id="routeActionsMenu" class="route-ctx-menu" style="display:none;background:var(--card);border:1px solid var(--border)"></div>
 </body>
 </html>

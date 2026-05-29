@@ -58,7 +58,7 @@
         <button onclick="rmZoomReset()" class="rm-zoom-btn" title="Fit to screen" style="margin-top:2px"><i class="ph-bold ph-arrows-in"></i></button>
     </div>
 
-    <div id="rmPopupOverlay" style="display:none;position:fixed;inset:0;z-index:9990;background:rgba(0,0,0,0.55);backdrop-filter:blur(2px)" onclick="if(event.target===this)rmClosePopup()"></div>
+    <div id="rmPopupOverlay" style="display:none;position:fixed;inset:0;z-index:9990;background:rgba(0,0,0,0.55);backdrop-filter:blur(2px)" onclick="_onBackdropClick(event,rmClosePopup)"></div>
     <div id="rmPopup" class="rm-popup-panel" style="display:none">
         <div class="rm-popup-header">
             <div style="display:flex;align-items:center;gap:8px;min-width:0">
@@ -141,6 +141,8 @@ window.rmInvalidateData = function() {
 
 (function() {
 
+const _rmEps = r => Array.isArray(r.entryPoints) ? r.entryPoints : r.entryPoints ? [r.entryPoints] : [];
+
 let _rmProto          = 'all';
 let _rmProvider       = 'all';
 let _rmEpFilter       = 'all';
@@ -183,7 +185,7 @@ function _rmBuildDagre(routes) {
     const mwUsage = {};
     routes.forEach(r => (r.middlewares||[]).forEach(mw => { mwUsage[mw] = (mwUsage[mw]||0)+1; }));
 
-    const epNames = [...new Set(routes.flatMap(r => r.entryPoints||[]))];
+    const epNames = [...new Set(routes.flatMap(r => _rmEps(r)))];
     const mwNames = [...new Set(routes.flatMap(r => r.middlewares||[]))];
     const svcMap  = new Map();
     routes.forEach(r => { if (r.service_name) svcMap.set(r.service_name, r.target||r.service_name); });
@@ -195,7 +197,7 @@ function _rmBuildDagre(routes) {
 
     routes.forEach(r => {
         const rv = `route:${r.id}`;
-        (r.entryPoints||[]).forEach(ep => {
+        _rmEps(r).forEach(ep => {
             const k = `${ep}→${rv}`;
             if (!g.hasEdge(`ep:${ep}`, rv, k)) g.setEdge(`ep:${ep}`, rv, { type:'ep-route' }, k);
         });
@@ -281,7 +283,7 @@ function _rmFilteredRoutes() {
         if (r.enabled === false) return false;
         if (_rmProto !== 'all' && r.protocol !== _rmProto) return false;
         if (_rmProvider !== 'all' && (r.provider || 'file') !== _rmProvider) return false;
-        if (_rmEpFilter !== 'all' && !(r.entryPoints||[]).includes(_rmEpFilter)) return false;
+        if (_rmEpFilter !== 'all' && !_rmEps(r).includes(_rmEpFilter)) return false;
         if (_rmSearch && !(r.name||'').toLowerCase().includes(_rmSearch)) return false;
         return true;
     });
@@ -575,7 +577,7 @@ function rmHighlightRoute(routeId, routes) {
         const id = n.dataset.rmid || '';
         let active = false;
         if (id === `route:${routeId}`)               active = true;
-        else if (id.startsWith('ep:'))               active = (route.entryPoints||[]).includes(id.slice(3));
+        else if (id.startsWith('ep:'))               active = _rmEps(route).includes(id.slice(3));
         else if (id.startsWith('mw:'))               active = (route.middlewares||[]).includes(id.slice(3));
         else if (id === `svc:${route.service_name}`) active = true;
         n.classList.toggle('rm-node-active', active);
@@ -587,14 +589,14 @@ function rmHighlightRoute(routeId, routes) {
 
 function rmHighlightNode(type, nodeId, routes) {
     const connected = routes.filter(r => {
-        if (type === 'ep')  return (r.entryPoints || []).includes(nodeId);
+        if (type === 'ep')  return _rmEps(r).includes(nodeId);
         if (type === 'mw')  return (r.middlewares  || []).includes(nodeId);
         if (type === 'svc') return r.service_name === nodeId;
         return false;
     });
     if (!connected.length) return;
     const activeRouteIds = new Set(connected.map(r => r.id));
-    const activeEps      = new Set(connected.flatMap(r => r.entryPoints || []));
+    const activeEps      = new Set(connected.flatMap(r => _rmEps(r)));
     const activeMws      = new Set(connected.flatMap(r => r.middlewares  || []));
     const activeSvcs     = new Set(connected.map(r => r.service_name).filter(Boolean));
     document.querySelectorAll('#rmCols .rm-node').forEach(n => {
@@ -645,12 +647,13 @@ function rmOpenPopup(type, nodeId, allRoutes, preFiltered) {
         allDomains.forEach(d => { detailsHtml += chip('ph-globe', 'Domain', d, 'var(--blue)'); });
         if (r.target && r.target !== 'N/A') detailsHtml += chip('ph-cube', 'Target', r.target);
         detailsHtml += chip('ph-arrows-left-right', 'Protocol', (r.protocol||'http').toUpperCase());
+        _rmEps(r).forEach(ep => { detailsHtml += chip('ph-arrows-in', 'Entry Point', ep); });
         if (r.tls)          detailsHtml += chip('ph-lock', 'TLS', 'Enabled', 'var(--green)');
         if (r.certResolver) detailsHtml += chip('ph-certificate', 'Resolver', r.certResolver, 'var(--green)');
         if (!r.enabled)     detailsHtml += chip('ph-eye-slash', 'Status', 'Inactive', 'var(--muted)');
         if (r.provider && r.provider !== 'file') detailsHtml += chip('ph-package', 'Provider', r.provider);
     } else if (type === 'ep') {
-        focusedRoutes = allRoutes.filter(r => (r.entryPoints||[]).includes(nodeId));
+        focusedRoutes = allRoutes.filter(r => _rmEps(r).includes(nodeId));
         const addr = _rmAllEps[nodeId]?.address || '';
         if (addr) detailsHtml += chip('ph-plugs-connected', 'Address', addr, 'var(--blue)');
         detailsHtml += chip('ph-git-branch', 'Routes', focusedRoutes.length);
@@ -777,7 +780,7 @@ function rmPopupHighlightRoute(routeId, routes) {
         const id = n.dataset.poprmid || '';
         let active = false;
         if (id === `route:${routeId}`)               active = true;
-        else if (id.startsWith('ep:'))               active = (route.entryPoints||[]).includes(id.slice(3));
+        else if (id.startsWith('ep:'))               active = _rmEps(route).includes(id.slice(3));
         else if (id.startsWith('mw:'))               active = (route.middlewares||[]).includes(id.slice(3));
         else if (id === `svc:${route.service_name}`) active = true;
         n.classList.toggle('rm-node-active', active);
