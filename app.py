@@ -2182,25 +2182,26 @@ def list_backups():
     ensure_backup_dir()
     static_path = _get_static_config_path()
     static_base = os.path.basename(static_path) if static_path else None
-    _name_re    = re.compile(r'^(.+)\.\d{8}_\d{6}\.bak$')
+    _name_re    = re.compile(r'^(.+)\.(\d{8}_\d{6})\.bak$')
     backups = []
     for f in os.listdir(BACKUP_DIR):
         if f.endswith('.bak'):
             path = os.path.join(BACKUP_DIR, f)
             st   = os.stat(path)
             m    = _name_re.match(f)
-            orig = m.group(1) if m else ''
+            orig   = m.group(1) if m else ''
+            ts_str = m.group(2) if m else ''
             kind = 'static' if static_base and orig == static_base else 'routes'
             backups.append({
                 'name':     f,
                 'size':     st.st_size,
                 'modified': time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(st.st_mtime)),
-                'mtime':    st.st_mtime,
+                'sort_key': ts_str or str(st.st_mtime),
                 'kind':     kind,
             })
-    backups.sort(key=lambda b: b['mtime'], reverse=True)
+    backups.sort(key=lambda b: b['sort_key'], reverse=True)
     for b in backups:
-        del b['mtime']
+        del b['sort_key']
     return backups
 
 _BACKUP_RE = re.compile(r'^[a-zA-Z0-9._ -]+\.yml\.\d{8}_\d{6}\.bak$')
