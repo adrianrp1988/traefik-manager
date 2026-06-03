@@ -132,8 +132,8 @@
                         </select>
                     </div>
                     <div id="wildcardSection" style="display:none">
-                        <div class="flex items-center gap-2 cursor-pointer" style="margin-top:4px" onclick="document.getElementById('wildcardCheckbox').click()">
-                            <input type="checkbox" id="wildcardCheckbox" onchange="_onWildcardToggle(this.checked)" style="accent-color:var(--blue)">
+                        <div class="flex items-center gap-2" style="margin-top:4px">
+                            <input type="checkbox" id="wildcardCheckbox" onchange="_onWildcardToggle(this.checked)" class="rounded" style="accent-color:var(--blue)">
                             <span class="text-sm" style="color:var(--text)">Request wildcard certificate</span>
                         </div>
                         <p class="text-xs mt-1" style="color:var(--muted)">Adds <code class="font-mono">tls.domains</code> with <code class="font-mono">*.domain</code> SAN - use with DNS challenge resolvers.</p>

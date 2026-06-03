@@ -1738,9 +1738,22 @@ function handleEdit(btn) {
             if (!app.tls && app.tls !== false) crHttp.value = '__disabled__';
             else if (app.certResolver) crHttp.value = app.certResolver;
             else crHttp.value = '__none__';
+            toggleWildcardSection(crHttp.value);
         }
         const insecureChk = document.getElementById('insecureSkipVerify');
         if (insecureChk) insecureChk.checked = !!app.insecureSkipVerify;
+        const tlsDomains = app.tlsDomains || [];
+        const wChk = document.getElementById('wildcardCheckbox');
+        if (tlsDomains.length && wChk) {
+            const first = tlsDomains[0];
+            wChk.checked = true;
+            const mainEl = document.getElementById('tlsWildcardMain');
+            const sansEl = document.getElementById('tlsWildcardSans');
+            if (mainEl) mainEl.value = first.main || '';
+            if (sansEl) sansEl.value = (first.sans || []).join('\n');
+        } else if (wChk) {
+            wChk.checked = false;
+        }
 
     } else if (proto === 'tcp') {
         document.getElementById('tcpRule').value = app.rule || '';
