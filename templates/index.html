@@ -850,7 +850,7 @@ function setMwMode(mode) {
     }
 }
 
-const _wizardTemplates = new Set(['basicAuth','digestAuth','forwardAuth','forwardAuthAuthentik','forwardAuthAuthelia','forwardAuthGatekeeper','ipAllowList','ipAllowListPrivate','rateLimit','secureHeaders','corsHeaders','redirectScheme','redirectRegex','stripPrefix','addPrefix','replacePath','compress','retry','circuitBreaker','buffering','chain','inFlightReq']);
+const _wizardTemplates = new Set(['basicAuth','digestAuth','forwardAuth','forwardAuthAuthentik','forwardAuthAuthelia','forwardAuthGatekeeper','oidcAuth','ipAllowList','ipAllowListPrivate','rateLimit','secureHeaders','corsHeaders','redirectScheme','redirectRegex','stripPrefix','addPrefix','replacePath','compress','retry','circuitBreaker','buffering','chain','inFlightReq']);
 
 const _wizKeyMap = {
     forwardAuthAuthentik: 'forwardAuth', forwardAuthAuthelia: 'forwardAuth',
@@ -877,6 +877,10 @@ function _showMwWizard(tpl) {
     } else if (tpl === 'forwardAuthGatekeeper') {
         const hd = document.getElementById('wizGkHeaders'); if (hd) hd.value = 'X-Auth-User\nX-Auth-Email\nX-Auth-Groups';
         const ga = document.getElementById('wizGkAuthorization'); if (ga) ga.checked = false;
+    } else if (tpl === 'oidcAuth') {
+        const sc = document.getElementById('wizOidcScopes'); if (sc) sc.value = 'openid\nprofile\nemail';
+        const hd = document.getElementById('wizOidcHeaders'); if (hd) hd.value = 'X-Forwarded-User: preferred_username\nX-Forwarded-Email: email\nX-Forwarded-Name: name';
+        const mx = document.getElementById('wizOidcSessionMaxAge'); if (mx) mx.value = '86400';
     } else if (tpl === 'ipAllowListPrivate') {
         const el = document.getElementById('wizIpCidrs'); if (el) el.value = '10.0.0.0/8\n172.16.0.0/12\n192.168.0.0/16\n127.0.0.1/32';
     }
@@ -919,6 +923,30 @@ function buildYamlFromWizard() {
         const allHdrs = auth ? ['Authorization', ...hdrs.filter(h => h !== 'Authorization')] : hdrs;
         yaml = 'forwardAuth:\n  address: "' + addr + '"\n  trustForwardHeader: ' + trust;
         if (allHdrs.length) yaml += '\n  authResponseHeaders:\n' + allHdrs.map(h => '    - "' + h + '"').join('\n');
+
+    } else if (key === 'oidcAuth') {
+        const providerUrl    = _val('wizOidcProviderUrl');
+        const clientId       = _val('wizOidcClientId');
+        const clientSecret   = _val('wizOidcClientSecret');
+        const secret         = _val('wizOidcSecret');
+        const scopes         = _lines('wizOidcScopes');
+        const maxAge         = parseInt(_val('wizOidcSessionMaxAge','86400')) || 86400;
+        const headerLines    = _lines('wizOidcHeaders');
+        const bypassLines    = _lines('wizOidcBypass');
+        const headers = headerLines.map(l => {
+            const idx = l.indexOf(':');
+            return idx > -1 ? { Name: l.slice(0, idx).trim(), Value: '{' + '{ .claims.' + l.slice(idx+1).trim() + ' }' + '}' } : null;
+        }).filter(Boolean);
+        yaml = 'plugin:\n  traefik-oidc-auth:';
+        if (secret) yaml += '\n    Secret: "' + secret + '"';
+        yaml += '\n    Provider:';
+        if (providerUrl) yaml += '\n      Url: "' + providerUrl + '"';
+        if (clientId)    yaml += '\n      ClientId: "' + clientId + '"';
+        if (clientSecret) yaml += '\n      ClientSecret: "' + clientSecret + '"';
+        if (scopes.length) yaml += '\n    Scopes:\n' + scopes.map(s => '      - ' + s).join('\n');
+        yaml += '\n    SessionCookie:\n      MaxAge: ' + maxAge;
+        if (headers.length) yaml += '\n    Headers:\n' + headers.map(h => '      - Name: "' + h.Name + '"\n        Value: "' + h.Value + '"').join('\n');
+        if (bypassLines.length) yaml += '\n    BypassAuthenticationRule:\n' + bypassLines.map(r => '      - "' + r + '"').join('\n');
 
     } else if (key === 'rateLimit') {
         yaml = 'rateLimit:\n  average: ' + _val('wizRlAvg','100') + '\n  burst: ' + _val('wizRlBurst','50') + '\n  period: ' + _val('wizRlPeriod','1s');
@@ -1831,6 +1859,7 @@ const mwTemplates = {
     forwardAuthAuthentik: `forwardAuth:\n  address: "http://authentik-server:9000/outpost.goauthentik.io/auth/traefik"\n  trustForwardHeader: true\n  authResponseHeaders:\n    - X-authentik-username\n    - X-authentik-groups\n    - X-authentik-email\n    - X-authentik-name\n    - X-authentik-uid`,
     forwardAuthAuthelia: `forwardAuth:\n  address: "http://authelia:9091/api/authz/forward-auth"\n  trustForwardHeader: true\n  authResponseHeaders:\n    - Remote-User\n    - Remote-Groups\n    - Remote-Name\n    - Remote-Email`,
     forwardAuthGatekeeper: `forwardAuth:\n  address: "https://auth.example.com/auth/verify"\n  trustForwardHeader: false\n  authResponseHeaders:\n    - "X-Auth-User"\n    - "X-Auth-Email"\n    - "X-Auth-Groups"`,
+    oidcAuth: `plugin:\n  traefik-oidc-auth:\n    Secret: "change-me-32-char-secret"\n    Provider:\n      Url: "https://login.microsoftonline.com/{tenant}/v2.0"\n      ClientId: "client-id"\n      ClientSecret: "client-secret"\n    Scopes:\n      - openid\n      - profile\n      - email\n    SessionCookie:\n      MaxAge: 86400\n    Headers:\n      - Name: "X-Forwarded-User"\n        Value: "{{ '{{' }} .claims.preferred_username {{ '}}' }}"\n      - Name: "X-Forwarded-Email"\n        Value: "{{ '{{' }} .claims.email {{ '}}' }}"`,
     ipAllowList: `ipAllowList:\n  sourceRange:\n    - "127.0.0.1/32"\n    - "192.168.1.0/24"`,
     ipAllowListPrivate: `ipAllowList:\n  sourceRange:\n    - "10.0.0.0/8"\n    - "172.16.0.0/12"\n    - "192.168.0.0/16"\n    - "127.0.0.1/32"`,
     rateLimit: `rateLimit:\n  average: 100\n  burst: 50\n  period: 1s`,
