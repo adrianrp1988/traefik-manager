@@ -96,6 +96,20 @@
     <div id="routeYamlPopoutEditor" style="flex:1;min-height:0;"></div>
 </div>
 
+<div id="gitDiffPopout" style="display:none;position:fixed;inset:0;z-index:9999;background:var(--bg);flex-direction:column;">
+    <div class="flex items-center justify-between px-6 py-3.5" style="border-bottom:1px solid var(--border);flex-shrink:0;">
+        <div class="flex items-center gap-3" style="min-width:0;flex:1;">
+            <div class="flex items-center gap-2 flex-shrink-0">
+                <i class="ph-bold ph-git-diff" style="color:var(--blue)"></i>
+                <span class="font-semibold text-sm" id="gitDiffPopoutTitle">Diff</span>
+            </div>
+            <div id="gitDiffFileTabs" class="flex gap-1 flex-wrap"></div>
+        </div>
+        <button onclick="closeGitDiffPopout()" class="btn-secondary text-xs flex-shrink-0"><i class="ph-bold ph-arrows-in mr-1"></i>Close</button>
+    </div>
+    <div id="gitDiffPopoutEditor" style="flex:1;min-height:0;"></div>
+</div>
+
 <div id="traefikRestartOverlay" style="display:none;position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,0.75);backdrop-filter:blur(4px);flex-direction:column;align-items:center;justify-content:center;gap:16px">
     <i class="ph-bold ph-arrows-clockwise text-5xl animate-spin" style="color:var(--blue);opacity:0.9"></i>
     <div class="text-center">
@@ -4704,6 +4718,74 @@ async function openStaticYamlPopoutFromShortcut() {
 
 function closeStaticYamlPopout() {
     const overlay = document.getElementById('staticYamlPopout');
+    if (overlay) overlay.style.display = 'none';
+}
+
+let _gitDiffEditor  = null;
+let _gitDiffFiles   = [];
+let _gitDiffActive  = 0;
+
+function openGitDiffPopout(sha, files) {
+    const overlay = document.getElementById('gitDiffPopout');
+    if (!overlay) return;
+    const title = document.getElementById('gitDiffPopoutTitle');
+    if (title) title.textContent = 'Diff - ' + sha.slice(0, 8);
+    _gitDiffFiles  = files;
+    _gitDiffActive = 0;
+    overlay.style.display = 'flex';
+    _renderGitDiffTabs();
+    _showGitDiffFile(0);
+}
+
+function _renderGitDiffTabs() {
+    const tabs = document.getElementById('gitDiffFileTabs');
+    if (!tabs) return;
+    tabs.innerHTML = _gitDiffFiles.map((f, i) => {
+        const name   = f.filename.split('/').pop();
+        const active = i === _gitDiffActive;
+        return `<button onclick="_showGitDiffFile(${i})" id="gitDiffTab${i}" title="${f.filename}" class="btn-secondary text-xs" style="${active ? 'background:var(--input-bg);border-color:var(--blue);' : ''}">${name}</button>`;
+    }).join('');
+}
+
+function _showGitDiffFile(idx) {
+    _gitDiffActive = idx;
+    const f = _gitDiffFiles[idx];
+    if (!f) return;
+    _gitDiffFiles.forEach((_, i) => {
+        const t = document.getElementById('gitDiffTab' + i);
+        if (t) t.style.borderColor = i === idx ? 'var(--blue)' : '';
+    });
+    const ext  = f.filename.split('.').pop().toLowerCase();
+    const lang = (ext === 'yml' || ext === 'yaml') ? 'yaml' : 'plaintext';
+    const container = document.getElementById('gitDiffPopoutEditor');
+    if (_gitDiffEditor) {
+        _gitDiffEditor.setModel({
+            original: monaco.editor.createModel(f.old, lang),
+            modified: monaco.editor.createModel(f.new, lang),
+        });
+    } else {
+        require(['vs/editor/editor.main'], function() {
+            _ensureMonacoThemes().then(() => {
+                const isDark = document.documentElement.classList.contains('dark');
+                _gitDiffEditor = monaco.editor.createDiffEditor(container, {
+                    readOnly:           true,
+                    renderSideBySide:   true,
+                    theme:              _monacoThemeName(isDark),
+                    fontSize:           12,
+                    minimap:            { enabled: false },
+                    scrollBeyondLastLine: false,
+                });
+                _gitDiffEditor.setModel({
+                    original: monaco.editor.createModel(f.old, lang),
+                    modified: monaco.editor.createModel(f.new, lang),
+                });
+            });
+        });
+    }
+}
+
+function closeGitDiffPopout() {
+    const overlay = document.getElementById('gitDiffPopout');
     if (overlay) overlay.style.display = 'none';
 }
 

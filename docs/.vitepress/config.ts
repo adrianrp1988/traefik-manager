@@ -32,8 +32,9 @@ export default defineConfig({
       { text: 'API', link: '/api' },
       { text: 'UI Examples', link: '/ui-examples' },
       {
-        text: 'v1.4.1',
+        text: 'v1.5.0',
         items: [
+          { text: 'v1.5.0', link: 'https://github.com/chr0nzz/traefik-manager/releases/tag/v1.5.0' },
           { text: 'v1.4.1', link: 'https://github.com/chr0nzz/traefik-manager/releases/tag/v1.4.1' },
           { text: 'v1.4.0', link: 'https://github.com/chr0nzz/traefik-manager/releases/tag/v1.4.0' },
           { text: 'v1.3.2', link: 'https://github.com/chr0nzz/traefik-manager/releases/tag/v1.3.2' },
@@ -69,6 +70,7 @@ export default defineConfig({
           { text: 'Environment Variables', link: '/env-vars' },
           { text: 'OIDC / SSO Login', link: '/oidc' },
           { text: 'Notification Webhooks', link: '/webhooks' },
+          { text: 'Git Repository Backup', link: '/git-backup' },
           { text: 'Reset Password', link: '/reset-password' },
         ],
       },

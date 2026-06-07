@@ -481,15 +481,18 @@
                     <div style="display:flex;flex-direction:column;flex:1;min-height:0;">
                         <div style="display:flex;gap:2px;padding:12px 16px 0;border-bottom:1px solid var(--border);flex-shrink:0;">
                             <button class="auth-sub-tab active" id="backup-tab-routes" onclick="switchBackupTab('routes', this)">
-                                <i class="ph-bold ph-path"></i> Routes
+                                <i class="ph-bold ph-path"></i> Dynamic Config
                             </button>
                             <button class="auth-sub-tab" id="backup-tab-static" onclick="switchBackupTab('static', this)">
                                 <i class="ph-bold ph-sliders-horizontal"></i> Static Config
                             </button>
+                            <button class="auth-sub-tab" id="backup-tab-git" onclick="switchBackupTab('git', this)">
+                                <i class="ph-bold ph-git-branch"></i> Git
+                            </button>
                         </div>
                         <div id="backup-sub-routes" class="auth-sub-panel" style="display:flex;flex-direction:column;gap:0;">
                             <div class="flex items-center justify-between mb-3" style="flex-shrink:0;">
-                                <span class="settings-section-label" style="margin:0;">Route Config Backups</span>
+                                <span class="settings-section-label" style="margin:0;">Dynamic Config Backups</span>
                                 <button onclick="createAndLoadBackups()" class="nav-btn text-xs">
                                     <i class="ph-bold ph-plus"></i> Create Backup
                                 </button>
@@ -520,6 +523,81 @@
                                 <div class="text-center py-8" style="color:var(--muted)">
                                     <i class="ph-light ph-spinner-gap text-2xl animate-spin block mb-2"></i>
                                     Loading...
+                                </div>
+                            </div>
+                        </div>
+
+                        <div id="backup-sub-git" class="auth-sub-panel" style="display:none;flex-direction:column;gap:0;overflow-y:auto;">
+                            <div style="flex-shrink:0;">
+                                <div class="flex items-center justify-between mb-3">
+                                    <span class="settings-section-label" style="margin:0;">Git Repository Backup</span>
+                                    <div class="flex gap-1.5">
+                                        <button onclick="gitTestConnection()" id="gitTestBtn" class="btn-secondary text-xs py-1 px-2.5">
+                                            <i class="ph-bold ph-plugs-connected text-xs"></i> Test
+                                        </button>
+                                        <button onclick="gitPushNow()" id="gitPushBtn" class="nav-btn text-xs">
+                                            <i class="ph-bold ph-cloud-arrow-up text-xs"></i> Push Now
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div id="gitStatusLine" class="text-xs mb-3 px-3 py-2 rounded-lg" style="background:var(--bg);border:1px solid var(--border);color:var(--muted);display:none;"></div>
+
+                                <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:14px;">
+                                    <div class="flex items-center justify-between py-2 px-3 rounded-lg" style="background:var(--bg);border:1px solid var(--border);">
+                                        <div>
+                                            <div class="text-xs font-medium">Enable Git Backup</div>
+                                            <div class="text-xs" style="color:var(--muted)">Automatically push config changes to your repository</div>
+                                        </div>
+                                        <div class="toggle-switch" id="toggle-git-backup" onclick="toggleGitBackupEnabled()"><div class="toggle-knob"></div></div>
+                                    </div>
+                                    <div>
+                                        <label class="text-xs font-medium block mb-1">Repository URL</label>
+                                        <input id="gitBackupRepo" type="text" class="input-field" placeholder="https://github.com/user/traefik-backups.git">
+                                    </div>
+                                    <div style="display:flex;gap:8px;">
+                                        <div style="flex:1;">
+                                            <label class="text-xs font-medium block mb-1">Branch</label>
+                                            <input id="gitBackupBranch" type="text" class="input-field" placeholder="main">
+                                        </div>
+                                        <div style="flex:1;">
+                                            <label class="text-xs font-medium block mb-1">Username</label>
+                                            <input id="gitBackupUsername" type="text" class="input-field" placeholder="git username">
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label class="text-xs font-medium block mb-1">Token / Password</label>
+                                        <input id="gitBackupToken" type="password" class="input-field" placeholder="Leave blank to keep existing">
+                                        <div id="gitTokenSet" class="text-xs mt-1" style="color:var(--muted);display:none;"><i class="ph-bold ph-check-circle" style="color:var(--green)"></i> Token is set</div>
+                                    </div>
+                                    <div>
+                                        <label class="text-xs font-medium block mb-1">Commit Message Template</label>
+                                        <input id="gitBackupCommitMsg" type="text" class="input-field" placeholder="traefik-manager: {action} at {timestamp}">
+                                        <div class="text-xs mt-1" style="color:var(--muted)">Use <code>{action}</code> and <code>{timestamp}</code> as placeholders</div>
+                                    </div>
+                                    <div class="flex items-center justify-between py-2 px-3 rounded-lg" style="background:var(--bg);border:1px solid var(--border);">
+                                        <div>
+                                            <div class="text-xs font-medium">Auto-push on save</div>
+                                            <div class="text-xs" style="color:var(--muted)">Push after every route, middleware, or static config change</div>
+                                        </div>
+                                        <div class="toggle-switch" id="toggle-git-autopush" onclick="toggleGitAutoPush()"><div class="toggle-knob"></div></div>
+                                    </div>
+                                </div>
+                                <button onclick="saveGitBackupSettings()" class="nav-btn text-xs w-full justify-center mb-4">
+                                    <i class="ph-bold ph-floppy-disk"></i> Save Git Settings
+                                </button>
+
+                                <div class="flex items-center justify-between mb-2" style="flex-shrink:0;">
+                                    <span class="settings-section-label" style="margin:0;">Git History</span>
+                                    <button onclick="loadGitCommits()" class="btn-secondary text-xs py-1 px-2.5">
+                                        <i class="ph-bold ph-arrows-clockwise text-xs"></i> Refresh
+                                    </button>
+                                </div>
+                            </div>
+                            <div id="gitCommitsList">
+                                <div class="text-center py-6" style="color:var(--muted)">
+                                    <i class="ph-light ph-git-commit text-3xl block mb-2 opacity-30"></i>
+                                    <p class="text-xs">No commits yet - push your first backup to see history</p>
                                 </div>
                             </div>
                         </div>
@@ -806,7 +884,200 @@ function switchBackupTab(id, btn) {
     if (btn) btn.classList.add('active');
     const panel = document.getElementById('backup-sub-' + id);
     if (panel) panel.style.display = 'flex';
+    if (id === 'git') loadGitTab();
 }
+
+let _gitBackupEnabled  = false;
+let _gitAutoPushEnabled = true;
+
+function toggleGitBackupEnabled() {
+    _gitBackupEnabled = !_gitBackupEnabled;
+    const el = document.getElementById('toggle-git-backup');
+    if (el) el.classList.toggle('on', _gitBackupEnabled);
+}
+
+function toggleGitAutoPush() {
+    _gitAutoPushEnabled = !_gitAutoPushEnabled;
+    const el = document.getElementById('toggle-git-autopush');
+    if (el) el.classList.toggle('on', _gitAutoPushEnabled);
+}
+
+async function loadGitTab() {
+    try {
+        const res  = await fetch('/api/settings');
+        const data = await res.json();
+        _gitBackupEnabled  = bool(data.git_backup_enabled);
+        _gitAutoPushEnabled = bool(data.git_backup_auto_push !== false);
+        const tog1 = document.getElementById('toggle-git-backup');
+        const tog2 = document.getElementById('toggle-git-autopush');
+        if (tog1) tog1.classList.toggle('on', _gitBackupEnabled);
+        if (tog2) tog2.classList.toggle('on', _gitAutoPushEnabled);
+        _setVal('gitBackupRepo',      data.git_backup_repo || '');
+        _setVal('gitBackupBranch',    data.git_backup_branch || 'main');
+        _setVal('gitBackupUsername',  data.git_backup_username || '');
+        _setVal('gitBackupCommitMsg', data.git_backup_commit_message || 'traefik-manager: {action} at {timestamp}');
+        const tokenSet = document.getElementById('gitTokenSet');
+        if (tokenSet) tokenSet.style.display = data.git_backup_token_set ? '' : 'none';
+    } catch(e) {}
+    loadGitStatus();
+    loadGitCommits();
+}
+
+async function loadGitStatus() {
+    try {
+        const res  = await fetch('/api/backup/git/status');
+        const data = await res.json();
+        const line = document.getElementById('gitStatusLine');
+        if (!line) return;
+        if (data.last_sha) {
+            line.style.display = '';
+            line.innerHTML = `<i class="ph-bold ph-check-circle" style="color:var(--green)"></i> Last push: <span class="font-mono">${data.last_sha}</span> &middot; ${data.last_push || ''}`;
+        } else {
+            line.style.display = 'none';
+        }
+    } catch(e) {}
+}
+
+async function loadGitCommits() {
+    const list = document.getElementById('gitCommitsList');
+    if (!list) return;
+    list.innerHTML = `<div class="text-center py-4" style="color:var(--muted)"><i class="ph-light ph-spinner-gap animate-spin text-xl block mb-1"></i></div>`;
+    try {
+        const res     = await fetch('/api/backup/git/commits');
+        const commits = await res.json();
+        if (!commits.length) {
+            list.innerHTML = `<div class="text-center py-6" style="color:var(--muted)"><i class="ph-light ph-git-commit text-3xl block mb-2 opacity-30"></i><p class="text-xs">No commits yet</p></div>`;
+            return;
+        }
+        list.innerHTML = commits.map(c => `
+            <div class="flex items-center justify-between py-2.5 px-3 mb-2 rounded-lg" style="background:var(--bg);border:1px solid var(--border)">
+                <div style="min-width:0;flex:1;">
+                    <div class="flex items-center gap-1.5">
+                        <span class="font-mono text-xs px-1.5 py-0.5 rounded" style="background:var(--input-bg);color:var(--muted);flex-shrink:0;">${c.sha_short}</span>
+                        <span class="text-xs truncate" style="color:var(--text)">${_esc(c.message)}</span>
+                    </div>
+                    <div class="text-xs mt-0.5" style="color:var(--muted)">${c.timestamp}</div>
+                </div>
+                <div class="flex gap-1 ml-2 flex-shrink-0">
+                    <button onclick="gitViewDiff('${c.sha}')" class="btn-secondary text-xs py-1 px-2" title="View diff">
+                        <i class="ph-bold ph-code text-xs"></i>
+                    </button>
+                    <button onclick="gitRestoreCommit('${c.sha}', '${c.sha_short}')" class="btn-secondary text-xs py-1 px-2.5">
+                        <i class="ph-bold ph-arrow-counter-clockwise text-xs"></i> Restore
+                    </button>
+                </div>
+            </div>`).join('');
+    } catch(e) {
+        list.innerHTML = `<p class="text-xs" style="color:var(--red)">Failed to load commits</p>`;
+    }
+}
+
+async function saveGitBackupSettings() {
+    const btn = document.querySelector('[onclick="saveGitBackupSettings()"]');
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="ph-light ph-spinner-gap animate-spin"></i> Saving…'; }
+    try {
+        const settings = await (await fetch('/api/settings')).json();
+        const token    = document.getElementById('gitBackupToken')?.value || '';
+        const payload  = {
+            ...settings,
+            git_backup_enabled:        _gitBackupEnabled,
+            git_backup_repo:           document.getElementById('gitBackupRepo')?.value.trim() || '',
+            git_backup_branch:         document.getElementById('gitBackupBranch')?.value.trim() || 'main',
+            git_backup_username:       document.getElementById('gitBackupUsername')?.value.trim() || '',
+            git_backup_commit_message: document.getElementById('gitBackupCommitMsg')?.value.trim() || 'traefik-manager: {action} at {timestamp}',
+            git_backup_auto_push:      _gitAutoPushEnabled,
+        };
+        if (token) payload.git_backup_token = token;
+        const res  = await fetch('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json', ..._csrfHeaders() }, body: JSON.stringify(payload) });
+        const data = await res.json();
+        if (data.success) {
+            showToast('Git settings saved', 'success');
+            document.getElementById('gitBackupToken').value = '';
+            const tokenSet = document.getElementById('gitTokenSet');
+            if (tokenSet && token) tokenSet.style.display = '';
+        } else {
+            showToast('Save failed: ' + (data.error || 'Unknown'), 'error');
+        }
+    } catch(e) { showToast('Save failed', 'error'); }
+    finally {
+        if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ph-bold ph-floppy-disk"></i> Save Git Settings'; }
+    }
+}
+
+async function gitTestConnection() {
+    const btn = document.getElementById('gitTestBtn');
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="ph-light ph-spinner-gap animate-spin text-xs"></i> Testing…'; }
+    try {
+        const token   = document.getElementById('gitBackupToken')?.value || '';
+        const payload = {
+            repo_url: document.getElementById('gitBackupRepo')?.value.trim() || '',
+            username: document.getElementById('gitBackupUsername')?.value.trim() || '',
+        };
+        if (token) payload.token = token;
+        const res  = await fetch('/api/backup/git/test', { method: 'POST', headers: { 'Content-Type': 'application/json', ..._csrfHeaders() }, body: JSON.stringify(payload) });
+        const data = await res.json();
+        if (data.ok) {
+            showToast('Connection successful', 'success');
+        } else {
+            showToast('Connection failed: ' + (data.error || 'Could not reach repository'), 'error');
+        }
+    } catch(e) {
+        showToast('Connection test failed', 'error');
+    }
+    finally {
+        if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ph-bold ph-plugs-connected text-xs"></i> Test'; }
+    }
+}
+
+async function gitPushNow() {
+    const btn = document.getElementById('gitPushBtn');
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="ph-light ph-spinner-gap animate-spin text-xs"></i> Pushing…'; }
+    try {
+        const res  = await fetch('/api/backup/git/push', { method: 'POST', headers: _csrfHeaders() });
+        const data = await res.json();
+        if (data.ok) {
+            showToast('Pushed successfully', 'success');
+            loadGitStatus();
+            loadGitCommits();
+        } else {
+            showToast('Push failed: ' + (data.error || 'Unknown'), 'error');
+        }
+        if (typeof fetchNotifications === 'function') fetchNotifications();
+    } catch(e) {
+        showToast('Push failed', 'error');
+    }
+    finally {
+        if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ph-bold ph-cloud-arrow-up text-xs"></i> Push Now'; }
+    }
+}
+
+async function gitRestoreCommit(sha, shaShort) {
+    if (!await _confirm(`Restore config from commit ${shaShort}? Local backups will be created first.`, 'Git Restore', 'Restore')) return;
+    try {
+        const res  = await fetch(`/api/backup/git/restore/${sha}`, { method: 'POST', headers: _csrfHeaders() });
+        const data = await res.json();
+        if (data.ok) {
+            showToast('Restored successfully', 'success');
+            closeSettingsModal();
+            setTimeout(() => location.reload(), 1500);
+        } else {
+            showToast('Restore failed: ' + (data.error || 'Unknown'), 'error');
+        }
+    } catch(e) { showToast('Restore failed', 'error'); }
+}
+
+async function gitViewDiff(sha) {
+    try {
+        const res  = await fetch(`/api/backup/git/commit/${sha}/diff`);
+        const data = await res.json();
+        if (data.error) { showToast('Diff error: ' + data.error, 'error'); return; }
+        if (!data.files || !data.files.length) { showToast('No changes in this commit', 'info'); return; }
+        if (typeof openGitDiffPopout === 'function') openGitDiffPopout(sha, data.files);
+    } catch(e) { showToast('Failed to load diff: ' + (e.message || e), 'error'); }
+}
+
+function bool(v) { return v === true || v === 1 || v === 'true'; }
+function _setVal(id, val) { const el = document.getElementById(id); if (el) el.value = val; }
 
 let _staticSettingsLoaded = false;
 function openStaticSettingsPanel() {

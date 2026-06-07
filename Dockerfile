@@ -6,7 +6,7 @@ LABEL org.opencontainers.image.title="Traefik Manager" \
       org.opencontainers.image.source="https://github.com/chr0nzz/traefik-manager" \
       org.opencontainers.image.licenses="GPL-3.0"
 
-RUN apk add --no-cache curl tar
+RUN apk add --no-cache curl tar git
 
 WORKDIR /app
 

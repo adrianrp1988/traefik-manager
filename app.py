@@ -5,6 +5,7 @@ import shutil
 import secrets
 import logging
 import threading
+import subprocess
 import requests
 import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -21,7 +22,7 @@ from io import StringIO
 from cryptography.fernet import Fernet, InvalidToken
 
 GITHUB_REPO  = "chr0nzz/traefik-manager"
-APP_VERSION  = "1.4.1"
+APP_VERSION  = "1.5.0"
 
 
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
@@ -102,6 +103,7 @@ yaml = YAML()
 yaml.preserve_quotes = True
 yaml.indent(mapping=2, sequence=4, offset=2)
 yaml.width = 4096
+_yaml_safe = YAML(typ='safe')
 
 
 BACKUP_DIR    = os.environ.get('BACKUP_DIR',    '/app/backups')
@@ -320,14 +322,37 @@ def load_settings() -> dict:
         'webhook_password':     '',
         'crowdsec_lapi_url':    '',
         'crowdsec_api_key':     '',
-        'traefik_api_user':     os.environ.get('TRAEFIK_API_USER', ''),
-        'traefik_api_password': os.environ.get('TRAEFIK_API_PASSWORD', ''),
+        'traefik_api_user':          os.environ.get('TRAEFIK_API_USER', ''),
+        'traefik_api_password':      os.environ.get('TRAEFIK_API_PASSWORD', ''),
+        'git_backup_enabled':        False,
+        'git_backup_repo':           '',
+        'git_backup_branch':         'main',
+        'git_backup_username':       '',
+        'git_backup_token':          '',
+        'git_backup_commit_message': 'traefik-manager: {action} at {timestamp}',
+        'git_backup_auto_push':      True,
     }
     if not os.path.exists(SETTINGS_PATH):
         return defaults
     try:
         with open(SETTINGS_PATH, 'r') as f:
-            data = yaml.load(f) or {}
+            raw = f.read()
+        try:
+            data = _yaml_safe.load(raw) or {}
+        except Exception:
+            import re as _re
+            stripped = _re.sub(r'(?m)^[-\.]{3}\s*$\n?', '', raw)
+            try:
+                data = _yaml_safe.load(stripped) or {}
+            except Exception:
+                data = {}
+                for part in _re.split(r'(?m)^---\s*$', raw):
+                    try:
+                        doc = _yaml_safe.load(part.strip())
+                        if isinstance(doc, dict):
+                            data.update(doc)
+                    except Exception:
+                        pass
         merged = defaults.copy()
         if 'domains' in data and isinstance(data['domains'], list):
             merged['domains'] = [str(d).strip() for d in data['domains'] if str(d).strip()]
@@ -423,6 +448,20 @@ def load_settings() -> dict:
             merged['traefik_api_user'] = str(data['traefik_api_user']).strip()
         if 'traefik_api_password' in data:
             merged['traefik_api_password'] = _decrypt_otp_secret(str(data['traefik_api_password']))
+        if 'git_backup_enabled' in data:
+            merged['git_backup_enabled'] = bool(data['git_backup_enabled'])
+        if 'git_backup_repo' in data:
+            merged['git_backup_repo'] = str(data['git_backup_repo']).strip()
+        if 'git_backup_branch' in data:
+            merged['git_backup_branch'] = str(data['git_backup_branch']).strip() or 'main'
+        if 'git_backup_username' in data:
+            merged['git_backup_username'] = str(data['git_backup_username']).strip()
+        if 'git_backup_token' in data:
+            merged['git_backup_token'] = _decrypt_otp_secret(str(data['git_backup_token']))
+        if 'git_backup_commit_message' in data:
+            merged['git_backup_commit_message'] = str(data['git_backup_commit_message']).strip() or 'traefik-manager: {action} at {timestamp}'
+        if 'git_backup_auto_push' in data:
+            merged['git_backup_auto_push'] = bool(data['git_backup_auto_push'])
         return merged
     except Exception as e:
         logger.warning(f"Could not load manager.yml, using defaults: {e}")
@@ -445,7 +484,11 @@ def save_settings(domains, cert_resolver, traefik_api_url,
                   oidc_groups_claim=None, webhook_url=None, webhook_type=None,
                   webhook_username=None, webhook_password=None,
                   crowdsec_lapi_url=None, crowdsec_api_key=None,
-                  traefik_api_user=None, traefik_api_password=None):
+                  traefik_api_user=None, traefik_api_password=None,
+                  git_backup_enabled=None, git_backup_repo=None,
+                  git_backup_branch=None, git_backup_username=None,
+                  git_backup_token=None, git_backup_commit_message=None,
+                  git_backup_auto_push=None):
     if visible_tabs is None:
         visible_tabs = {t: False for t in OPTIONAL_TABS}
     _cur = load_settings()
@@ -501,48 +544,76 @@ def save_settings(domains, cert_resolver, traefik_api_url,
         traefik_api_user = _cur.get('traefik_api_user', '')
     if traefik_api_password is None:
         traefik_api_password = _cur.get('traefik_api_password', '')
+    if git_backup_enabled is None:
+        git_backup_enabled = _cur.get('git_backup_enabled', False)
+    if git_backup_repo is None:
+        git_backup_repo = _cur.get('git_backup_repo', '')
+    if git_backup_branch is None:
+        git_backup_branch = _cur.get('git_backup_branch', 'main')
+    if git_backup_username is None:
+        git_backup_username = _cur.get('git_backup_username', '')
+    if git_backup_token is None:
+        git_backup_token = _cur.get('git_backup_token', '')
+    if git_backup_commit_message is None:
+        git_backup_commit_message = _cur.get('git_backup_commit_message', 'traefik-manager: {action} at {timestamp}')
+    if git_backup_auto_push is None:
+        git_backup_auto_push = _cur.get('git_backup_auto_push', True)
     otp_secret = _encrypt_otp_secret(otp_secret)
     oidc_client_secret_enc = _encrypt_otp_secret(oidc_client_secret) if oidc_client_secret else ''
     os.makedirs(os.path.dirname(SETTINGS_PATH), exist_ok=True)
+    import json as _json
+    def _plain(v):
+        try:
+            return _json.loads(_json.dumps(v, default=str))
+        except Exception:
+            return v
     tmp = SETTINGS_PATH + '.tmp'
+    _doc = _plain({
+        'domains':              domains,
+        'cert_resolver':        cert_resolver,
+        'traefik_api_url':      traefik_api_url,
+        'auth_enabled':         auth_enabled,
+        'password_hash':        password_hash,
+        'visible_tabs':         visible_tabs,
+        'must_change_password': must_change_password,
+        'setup_complete':       setup_complete,
+        'otp_secret':           otp_secret,
+        'otp_enabled':          otp_enabled,
+        'disabled_routes':      disabled_routes,
+        'api_keys':             api_keys,
+        'api_key_enabled':      len(list(api_keys)) > 0,
+        'self_route':           self_route,
+        'acme_json_path':       acme_json_path,
+        'access_log_path':      access_log_path,
+        'static_config_path':   static_config_path,
+        'oidc_enabled':         oidc_enabled,
+        'oidc_provider_url':    oidc_provider_url,
+        'oidc_client_id':       oidc_client_id,
+        'oidc_client_secret':   oidc_client_secret_enc,
+        'oidc_display_name':    oidc_display_name,
+        'oidc_allowed_emails':  oidc_allowed_emails,
+        'oidc_allowed_groups':  oidc_allowed_groups,
+        'oidc_groups_claim':    oidc_groups_claim,
+        'webhook_url':          webhook_url,
+        'webhook_type':         webhook_type,
+        'webhook_username':     webhook_username,
+        'webhook_password':     _encrypt_otp_secret(webhook_password) if webhook_password else '',
+        'crowdsec_lapi_url':    crowdsec_lapi_url,
+        'crowdsec_api_key':     _encrypt_otp_secret(crowdsec_api_key) if crowdsec_api_key else '',
+        'traefik_api_user':          traefik_api_user,
+        'traefik_api_password':      _encrypt_otp_secret(traefik_api_password) if traefik_api_password else '',
+        'git_backup_enabled':        git_backup_enabled,
+        'git_backup_repo':           git_backup_repo,
+        'git_backup_branch':         git_backup_branch,
+        'git_backup_username':       git_backup_username,
+        'git_backup_token':          _encrypt_otp_secret(git_backup_token) if git_backup_token else '',
+        'git_backup_commit_message': git_backup_commit_message,
+        'git_backup_auto_push':      git_backup_auto_push,
+    })
     with open(tmp, 'w') as f:
-        yaml.dump({
-            'domains':              domains,
-            'cert_resolver':        cert_resolver,
-            'traefik_api_url':      traefik_api_url,
-            'auth_enabled':         auth_enabled,
-            'password_hash':        password_hash,
-            'visible_tabs':         visible_tabs,
-            'must_change_password': must_change_password,
-            'setup_complete':       setup_complete,
-            'otp_secret':           otp_secret,
-            'otp_enabled':          otp_enabled,
-            'disabled_routes':      disabled_routes,
-            'api_keys':             api_keys,
-            'api_key_enabled':      len(api_keys) > 0,
-            'self_route':           self_route,
-            'acme_json_path':       acme_json_path,
-            'access_log_path':      access_log_path,
-            'static_config_path':   static_config_path,
-            'oidc_enabled':         oidc_enabled,
-            'oidc_provider_url':    oidc_provider_url,
-            'oidc_client_id':       oidc_client_id,
-            'oidc_client_secret':   oidc_client_secret_enc,
-            'oidc_display_name':    oidc_display_name,
-            'oidc_allowed_emails':  oidc_allowed_emails,
-            'oidc_allowed_groups':  oidc_allowed_groups,
-            'oidc_groups_claim':    oidc_groups_claim,
-            'webhook_url':          webhook_url,
-            'webhook_type':         webhook_type,
-            'webhook_username':     webhook_username,
-            'webhook_password':     _encrypt_otp_secret(webhook_password) if webhook_password else '',
-            'crowdsec_lapi_url':    crowdsec_lapi_url,
-            'crowdsec_api_key':     _encrypt_otp_secret(crowdsec_api_key) if crowdsec_api_key else '',
-            'traefik_api_user':     traefik_api_user,
-            'traefik_api_password': _encrypt_otp_secret(traefik_api_password) if traefik_api_password else '',
-        }, f)
+        yaml.dump(_doc, f)
     os.replace(tmp, SETTINGS_PATH)
-    logger.info("Manager settings saved")
+    logger.info(f"Manager settings saved: git_enabled={git_backup_enabled} git_repo={'set' if git_backup_repo else 'empty'}")
 
 
 SELF_ROUTE_FILENAME = 'traefik-manager-self.yml'
@@ -1744,6 +1815,7 @@ def api_static_config_save():
             f.write(content)
         logger.info(f"Static config saved by {request.remote_addr}: {safe_path}")
         add_notification('success', 'Static config saved')
+        threading.Thread(target=lambda: _git_push_if_enabled('static config save'), daemon=True).start()
         return jsonify({'ok': True})
     except Exception as e:
         logger.exception("Failed to write static config")
@@ -2220,6 +2292,236 @@ def _validated_backup_path(filename: str) -> str:
         abort(400)
     return path
 
+def _git_repo_dir():
+    return os.path.join(BACKUP_DIR, 'git-repo')
+
+def _git_run(args, cwd=None):
+    env = os.environ.copy()
+    env['GIT_TERMINAL_PROMPT'] = '0'
+    env['GIT_ASKPASS'] = ''
+    env['GIT_AUTHOR_NAME'] = 'Traefik Manager'
+    env['GIT_AUTHOR_EMAIL'] = 'traefik-manager@localhost'
+    env['GIT_COMMITTER_NAME'] = 'Traefik Manager'
+    env['GIT_COMMITTER_EMAIL'] = 'traefik-manager@localhost'
+    result = subprocess.run(
+        ['git'] + args,
+        cwd=cwd or _git_repo_dir(),
+        capture_output=True,
+        text=True,
+        encoding='utf-8',
+        errors='replace',
+        timeout=30,
+        env=env
+    )
+    return result.stdout.strip(), result.stderr.strip(), result.returncode
+
+def _git_auth_url(repo_url, username, token):
+    if not token:
+        return repo_url
+    from urllib.parse import urlparse, urlunparse
+    p = urlparse(repo_url)
+    netloc = f"{username}:{token}@{p.hostname}" if username else f"{token}@{p.hostname}"
+    if p.port:
+        netloc += f":{p.port}"
+    return urlunparse(p._replace(netloc=netloc))
+
+def _git_ensure_repo():
+    s        = load_settings()
+    repo_url = s.get('git_backup_repo', '').strip()
+    branch   = s.get('git_backup_branch', 'main').strip() or 'main'
+    username = s.get('git_backup_username', '').strip()
+    token    = s.get('git_backup_token', '').strip()
+    auth_url = _git_auth_url(repo_url, username, token)
+    repo_dir = _git_repo_dir()
+    if not os.path.exists(os.path.join(repo_dir, '.git')):
+        os.makedirs(repo_dir, exist_ok=True)
+        _, _, rc = _git_run(['clone', '--branch', branch, auth_url, '.'], cwd=repo_dir)
+        if rc != 0:
+            _git_run(['init'], cwd=repo_dir)
+            _git_run(['remote', 'add', 'origin', auth_url], cwd=repo_dir)
+            _git_run(['config', 'user.email', 'traefik-manager@localhost'], cwd=repo_dir)
+            _git_run(['config', 'user.name', 'Traefik Manager'], cwd=repo_dir)
+            _git_run(['pull', 'origin', branch], cwd=repo_dir)
+    else:
+        _git_run(['remote', 'set-url', 'origin', auth_url])
+        _git_run(['config', 'user.email', 'traefik-manager@localhost'])
+        _git_run(['config', 'user.name', 'Traefik Manager'])
+    return repo_dir
+
+def _git_push_configs(action='backup'):
+    s = load_settings()
+    if not s.get('git_backup_repo', '').strip():
+        return False, 'No repository configured'
+    branch = s.get('git_backup_branch', 'main').strip() or 'main'
+    tmpl   = s.get('git_backup_commit_message', 'traefik-manager: {action} at {timestamp}')
+    try:
+        repo_dir = _git_ensure_repo()
+    except Exception as e:
+        return False, f'Repo init failed: {e}'
+    dyn_dir    = os.path.join(repo_dir, 'dynamic')
+    static_dir = os.path.join(repo_dir, 'static')
+    os.makedirs(dyn_dir,    exist_ok=True)
+    os.makedirs(static_dir, exist_ok=True)
+    for p in CONFIG_PATHS:
+        if os.path.exists(p):
+            shutil.copy2(p, os.path.join(dyn_dir, os.path.basename(p)))
+    sp = _get_static_config_path()
+    if sp and os.path.exists(sp):
+        shutil.copy2(sp, os.path.join(static_dir, os.path.basename(sp)))
+    ts  = time.strftime('%Y-%m-%d %H:%M:%S')
+    msg = tmpl.replace('{action}', action).replace('{timestamp}', ts)
+    _git_run(['add', '-A'])
+    _, _, rc = _git_run(['diff', '--cached', '--quiet'])
+    if rc == 0:
+        return True, 'No changes'
+    _, err, rc = _git_run(['commit', '-m', msg])
+    if rc != 0:
+        return False, f'Commit failed: {err}'
+    _, err, rc = _git_run(['push', '-u', 'origin', branch])
+    if rc != 0:
+        return False, f'Push failed: {err}'
+    logger.info(f"Git backup: {msg}")
+    return True, ''
+
+def _git_push_if_enabled(action='backup'):
+    try:
+        s = load_settings()
+        enabled   = s.get('git_backup_enabled')
+        auto_push = s.get('git_backup_auto_push')
+        repo      = s.get('git_backup_repo', '').strip()
+        logger.info(f"Git auto-push check: enabled={enabled} auto_push={auto_push} repo={'set' if repo else 'not set'}")
+        if enabled and auto_push and repo:
+            ok, err = _git_push_configs(action)
+            if not ok and err != 'No changes':
+                logger.warning(f"Git backup failed: {err}")
+                add_notification('error', f'Git auto-push failed ({action}): {err}')
+    except Exception:
+        logger.exception("Git push error")
+
+
+@app.route('/api/backup/git/status')
+@login_required
+def api_git_backup_status():
+    s          = load_settings()
+    configured = bool(s.get('git_backup_repo', '').strip())
+    result     = {'enabled': bool(s.get('git_backup_enabled')), 'configured': configured, 'last_sha': None, 'last_push': None}
+    if configured and os.path.exists(os.path.join(_git_repo_dir(), '.git')):
+        out, _, rc = _git_run(['log', '-1', '--format=%H|%ci|%s'])
+        if rc == 0 and '|' in out:
+            parts = out.split('|', 2)
+            result['last_sha']  = parts[0][:8]
+            result['last_push'] = parts[1].strip() if len(parts) > 1 else None
+    return jsonify(result)
+
+@app.route('/api/backup/git/push', methods=['POST'])
+@csrf_protect
+@login_required
+def api_git_backup_push():
+    ok, err = _git_push_configs('manual')
+    if ok:
+        add_notification('success', 'Git backup pushed')
+        return jsonify({'ok': True})
+    add_notification('error', f'Git push failed: {err}')
+    return jsonify({'ok': False, 'error': err}), 400
+
+@app.route('/api/backup/git/test', methods=['POST'])
+@csrf_protect
+@login_required
+def api_git_backup_test():
+    body     = request.get_json(silent=True) or {}
+    s        = load_settings()
+    repo_url = (body.get('repo_url') or s.get('git_backup_repo', '')).strip()
+    username = (body.get('username') or s.get('git_backup_username', '')).strip()
+    token    = (body.get('token') or s.get('git_backup_token', '')).strip()
+    if not repo_url:
+        return jsonify({'ok': False, 'error': 'No repository URL configured'}), 400
+    auth_url = _git_auth_url(repo_url, username, token)
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _, err, rc = _git_run(['ls-remote', '--quiet', auth_url], cwd=tmpdir)
+    if rc == 0:
+        return jsonify({'ok': True})
+    safe_err = err.replace(token, '***') if token else err
+    return jsonify({'ok': False, 'error': safe_err or 'Could not reach repository'}), 400
+
+@app.route('/api/backup/git/commits')
+@login_required
+def api_git_backup_commits():
+    if not os.path.exists(os.path.join(_git_repo_dir(), '.git')):
+        return jsonify([])
+    out, _, rc = _git_run(['log', '--format=%H|%ci|%s', '-50'])
+    if rc != 0:
+        return jsonify([])
+    commits = []
+    for line in out.splitlines():
+        parts = line.split('|', 2)
+        if len(parts) == 3:
+            commits.append({'sha': parts[0], 'sha_short': parts[0][:8], 'timestamp': parts[1].strip(), 'message': parts[2].strip()})
+    return jsonify(commits)
+
+@app.route('/api/backup/git/commit/<sha>/diff')
+@login_required
+def api_git_backup_diff(sha):
+    if not re.match(r'^[0-9a-f]{7,40}$', sha):
+        abort(400)
+    if not os.path.exists(os.path.join(_git_repo_dir(), '.git')):
+        return jsonify({'stat': '', 'files': []})
+    try:
+        stat, _, _ = _git_run(['show', '--stat', '--format=', sha])
+        changed, _, rc = _git_run(['diff-tree', '--no-commit-id', '-r', '--name-status', sha])
+        files = []
+        for line in changed.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            parts = line.split('\t', 1)
+            if len(parts) != 2:
+                continue
+            status, filename = parts[0].strip(), parts[1].strip()
+            new_content, _, new_rc = _git_run(['show', f'{sha}:{filename}'])
+            old_content, _, old_rc = _git_run(['show', f'{sha}^:{filename}'])
+            files.append({
+                'filename': filename,
+                'status':   status,
+                'old':      old_content if old_rc == 0 else '',
+                'new':      new_content if new_rc == 0 else '',
+            })
+        return jsonify({'stat': stat, 'files': files})
+    except Exception as e:
+        logger.exception("Git diff error")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/backup/git/restore/<sha>', methods=['POST'])
+@csrf_protect
+@login_required
+def api_git_backup_restore(sha):
+    if not re.match(r'^[0-9a-f]{7,40}$', sha):
+        abort(400)
+    if not os.path.exists(os.path.join(_git_repo_dir(), '.git')):
+        return jsonify({'error': 'Git repo not initialized'}), 400
+    try:
+        for p in CONFIG_PATHS:
+            create_backup(p)
+        sp = _get_static_config_path()
+        if sp:
+            create_backup(sp)
+        for p in CONFIG_PATHS:
+            content, _, rc = _git_run(['show', f'{sha}:{os.path.basename(p)}'])
+            if rc == 0 and content:
+                with open(p, 'w') as f:
+                    f.write(content)
+        if sp:
+            content, _, rc = _git_run(['show', f'{sha}:{os.path.basename(sp)}'])
+            if rc == 0 and content:
+                with open(sp, 'w') as f:
+                    f.write(content)
+        add_notification('warning', f'Restored from git commit {sha[:8]}')
+        return jsonify({'ok': True})
+    except Exception as e:
+        logger.exception("Git restore error")
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/notifications')
 @login_required
 def api_notifications():
@@ -2462,6 +2764,8 @@ def api_get_settings():
     s['oidc_client_secret_set'] = bool(load_settings().get('oidc_client_secret', ''))
     s['crowdsec_api_key_set']   = bool(_cs_api_key())
     s['crowdsec_enabled']       = bool(_cs_lapi_url() and _cs_api_key())
+    s['git_backup_token_set']   = bool(s.get('git_backup_token', ''))
+    s.pop('git_backup_token', None)
     return jsonify(s)
 
 @app.route('/api/settings', methods=['POST'])
@@ -2470,6 +2774,7 @@ def api_get_settings():
 def api_save_settings():
     try:
         data        = request.get_json()
+        logger.info(f"api_save_settings: git_fields_present={{'enabled' in data, 'repo' in data, 'auto_push' in data}} enabled={data.get('git_backup_enabled','ABSENT')} repo={'set' if data.get('git_backup_repo') else 'empty/absent'}")
         domains_raw = data.get('domains', '')
         domains     = [d.strip() for d in (domains_raw if isinstance(domains_raw, list) else str(domains_raw).split(',')) if str(d).strip()]
         if not domains:
@@ -2487,8 +2792,15 @@ def api_save_settings():
         webhook_password     = str(data.get('webhook_password', ''))
         crowdsec_lapi_url    = str(data.get('crowdsec_lapi_url', '')).strip()
         crowdsec_api_key     = str(data.get('crowdsec_api_key', ''))
-        traefik_api_user     = str(data.get('traefik_api_user', '')).strip()
-        traefik_api_password = str(data.get('traefik_api_password', ''))
+        traefik_api_user          = str(data.get('traefik_api_user', '')).strip()
+        traefik_api_password      = str(data.get('traefik_api_password', ''))
+        git_backup_enabled        = bool(data['git_backup_enabled'])        if 'git_backup_enabled'        in data else None
+        git_backup_repo           = str(data['git_backup_repo']).strip()   if 'git_backup_repo'           in data else None
+        git_backup_branch         = (str(data['git_backup_branch']).strip() or 'main') if 'git_backup_branch' in data else None
+        git_backup_username       = str(data['git_backup_username']).strip() if 'git_backup_username'      in data else None
+        git_backup_token          = str(data.get('git_backup_token', ''))
+        git_backup_commit_message = (str(data['git_backup_commit_message']).strip() or 'traefik-manager: {action} at {timestamp}') if 'git_backup_commit_message' in data else None
+        git_backup_auto_push      = bool(data['git_backup_auto_push'])     if 'git_backup_auto_push'      in data else None
         existing = load_settings()
         if not webhook_password:
             webhook_password = existing.get('webhook_password', '')
@@ -2496,6 +2808,8 @@ def api_save_settings():
             crowdsec_api_key = existing.get('crowdsec_api_key', '')
         if not traefik_api_password:
             traefik_api_password = existing.get('traefik_api_password', '')
+        if not git_backup_token:
+            git_backup_token = existing.get('git_backup_token', '')
         save_settings(domains, cert_resolver, traefik_api_url,
                       auth_enabled=existing['auth_enabled'],
                       password_hash=existing['password_hash'],
@@ -2510,12 +2824,20 @@ def api_save_settings():
                       crowdsec_lapi_url=crowdsec_lapi_url,
                       crowdsec_api_key=crowdsec_api_key,
                       traefik_api_user=traefik_api_user,
-                      traefik_api_password=traefik_api_password)
+                      traefik_api_password=traefik_api_password,
+                      git_backup_enabled=git_backup_enabled,
+                      git_backup_repo=git_backup_repo,
+                      git_backup_branch=git_backup_branch,
+                      git_backup_username=git_backup_username,
+                      git_backup_token=git_backup_token,
+                      git_backup_commit_message=git_backup_commit_message,
+                      git_backup_auto_push=git_backup_auto_push)
         result = load_settings()
         result.pop('password_hash', None)
         result.pop('oidc_client_secret', None)
         result.pop('crowdsec_api_key', None)
         result.pop('traefik_api_password', None)
+        result.pop('git_backup_token', None)
         return jsonify({'success': True, 'settings': result})
     except Exception as e:
         logger.exception("Settings save error")
@@ -3478,6 +3800,7 @@ def save_entry():
         msg = f"Successfully saved {svc_name}"
         action = "updated" if is_edit else "created"
         add_notification('success', f"Route {svc_name} {action}")
+        threading.Thread(target=lambda: _git_push_if_enabled('route save'), daemon=True).start()
         if fetch:
             return jsonify({'ok': True, 'message': msg})
         flash(msg, "success")
@@ -3565,6 +3888,7 @@ def save_middleware():
         msg = f"Successfully saved middleware {mw_name}"
         action = "updated" if is_edit else "created"
         add_notification('success', f"Middleware {mw_name} {action}")
+        threading.Thread(target=lambda: _git_push_if_enabled('middleware save'), daemon=True).start()
         if fetch:
             return jsonify({'ok': True, 'message': msg})
         flash(msg, "success")
