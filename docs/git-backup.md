@@ -25,7 +25,7 @@ Supported platforms: GitHub, Gitea, Forgejo, GitLab, and any Git host accessible
 | Branch | Branch to push to (default: `main`) |
 | Username | Your Git username (required for most hosts) |
 | Token / Password | The access token you generated |
-| Commit Message | Template — use `{action}` and `{timestamp}` as placeholders |
+| Commit Message | Template - use `{action}` and `{timestamp}` as placeholders |
 | Auto-push on save | Push automatically after every route, middleware, or static config change |
 
 **5. Click "Test"** to verify the connection, then **"Save Git Settings"**.

@@ -1090,7 +1090,7 @@ async function saveRouteAjax(event) {
         const json = await res.json();
         closeModal();
         showToast(json.message, json.ok ? 'success' : 'error');
-        if (json.ok) { refreshRoutes(); fetchNotifications(); if (typeof window.rmInvalidateData === 'function') window.rmInvalidateData(); }
+        if (json.ok) { refreshRoutes(); fetchNotifications(); if (typeof window.rmInvalidateData === 'function') window.rmInvalidateData(); setTimeout(fetchNotifications, 8000); }
     } catch(e) {
         showToast('Error saving route', 'error');
     } finally {
@@ -1119,7 +1119,7 @@ async function saveMwAjax(event) {
         const json = await res.json();
         closeMwModal();
         showToast(json.message, json.ok ? 'success' : 'error');
-        if (json.ok) { refreshRoutes(); fetchNotifications(); if (typeof window.rmInvalidateData === 'function') window.rmInvalidateData(); }
+        if (json.ok) { refreshRoutes(); fetchNotifications(); if (typeof window.rmInvalidateData === 'function') window.rmInvalidateData(); setTimeout(fetchNotifications, 8000); }
     } catch(e) {
         showToast('Error saving middleware', 'error');
     } finally {

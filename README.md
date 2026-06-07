@@ -268,6 +268,7 @@ Add routes, manage middlewares, monitor services, and view TLS certificates - al
 - **Route clone** - duplicate a route into the add modal pre-filled with its service URL, middlewares, and entrypoints
 - **Multi-config file support** - mount several dynamic config files with `CONFIG_DIR` or `CONFIG_PATHS`; a dropdown selects which file each route or middleware is saved to; **create new files on the fly** when `CONFIG_DIR` is set
 - **Timestamped backups** before every change; one-click restore from Settings; `POST /api/backup/create` and `POST /api/backup/static/create` for automation
+- **Git Repository Backup** - push your Traefik configuration to a remote Git repository (GitHub, Gitea, Forgejo, GitLab, or any HTTPS host) after every change; browse the full commit history, view per-file side-by-side diffs, and restore any commit with one click; access token stored encrypted at rest; auto-push on every route, middleware, or static config save; manual push and Test Connection available in Settings → Backups → Git
 
 **Live Dashboard**
 - Real-time stats: router counts, service health, entrypoints, Traefik version
@@ -383,6 +384,7 @@ Full documentation at **[traefik-manager.xyzlab.dev](https://traefik-manager.xyz
 | [Security](https://traefik-manager.xyzlab.dev/security.html)              | API keys, sessions, CSRF, rate limits, and hardening  |
 | [API Reference](https://traefik-manager.xyzlab.dev/api.html)              | REST API for integrations and the mobile app          |
 | [OIDC / SSO](https://traefik-manager.xyzlab.dev/oidc.html)                | OIDC setup, provider examples, and access control     |
+| [Git Repository Backup](https://traefik-manager.xyzlab.dev/git-backup.html) | Auto-push, commit history, diff viewer, and one-click restore |
 | [Mobile App](https://traefik-manager.xyzlab.dev/mobile.html)              | Android companion app setup and features              |
 | [Reset Password](https://traefik-manager.xyzlab.dev/reset-password.html)  | CLI reset, TOTP recovery, manual reset                |
 | [UI Examples](https://traefik-manager.xyzlab.dev/ui-examples.html)        | Screenshots and walkthroughs                          |

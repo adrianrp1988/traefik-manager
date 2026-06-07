@@ -613,7 +613,7 @@ def save_settings(domains, cert_resolver, traefik_api_url,
     with open(tmp, 'w') as f:
         yaml.dump(_doc, f)
     os.replace(tmp, SETTINGS_PATH)
-    logger.info(f"Manager settings saved: git_enabled={git_backup_enabled} git_repo={'set' if git_backup_repo else 'empty'}")
+    logger.info("Manager settings saved")
 
 
 SELF_ROUTE_FILENAME = 'traefik-manager-self.yml'
@@ -2389,12 +2389,15 @@ def _git_push_if_enabled(action='backup'):
         enabled   = s.get('git_backup_enabled')
         auto_push = s.get('git_backup_auto_push')
         repo      = s.get('git_backup_repo', '').strip()
-        logger.info(f"Git auto-push check: enabled={enabled} auto_push={auto_push} repo={'set' if repo else 'not set'}")
         if enabled and auto_push and repo:
             ok, err = _git_push_configs(action)
-            if not ok and err != 'No changes':
+            if ok:
+                add_notification('success', f'Git backup pushed ({action})')
+            elif err == 'No changes':
+                pass
+            else:
                 logger.warning(f"Git backup failed: {err}")
-                add_notification('error', f'Git auto-push failed ({action}): {err}')
+                add_notification('error', f'Git backup failed ({action}): {err}')
     except Exception:
         logger.exception("Git push error")
 
@@ -2519,6 +2522,7 @@ def api_git_backup_restore(sha):
         return jsonify({'ok': True})
     except Exception as e:
         logger.exception("Git restore error")
+        add_notification('error', f'Git restore failed: {e}')
         return jsonify({'error': str(e)}), 500
 
 
@@ -2774,7 +2778,6 @@ def api_get_settings():
 def api_save_settings():
     try:
         data        = request.get_json()
-        logger.info(f"api_save_settings: git_fields_present={{'enabled' in data, 'repo' in data, 'auto_push' in data}} enabled={data.get('git_backup_enabled','ABSENT')} repo={'set' if data.get('git_backup_repo') else 'empty/absent'}")
         domains_raw = data.get('domains', '')
         domains     = [d.strip() for d in (domains_raw if isinstance(domains_raw, list) else str(domains_raw).split(',')) if str(d).strip()]
         if not domains:
