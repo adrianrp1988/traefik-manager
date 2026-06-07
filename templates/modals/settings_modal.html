@@ -535,6 +535,9 @@
                                         <button onclick="gitTestConnection()" id="gitTestBtn" class="btn-secondary text-xs py-1 px-2.5">
                                             <i class="ph-bold ph-plugs-connected text-xs"></i> Test
                                         </button>
+                                        <button onclick="gitResetRepo()" id="gitResetBtn" class="btn-secondary text-xs py-1 px-2.5" style="color:var(--red);border-color:rgba(248,81,73,0.3);">
+                                            <i class="ph-bold ph-trash text-xs"></i> Reset
+                                        </button>
                                         <button onclick="gitPushNow()" id="gitPushBtn" class="nav-btn text-xs">
                                             <i class="ph-bold ph-cloud-arrow-up text-xs"></i> Push Now
                                         </button>
@@ -1048,6 +1051,27 @@ async function gitPushNow() {
     }
     finally {
         if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ph-bold ph-cloud-arrow-up text-xs"></i> Push Now'; }
+    }
+}
+
+async function gitResetRepo() {
+    if (!await _confirm('This will delete the local git repository clone. TM will re-initialize it on the next push.\n\nThis does NOT affect your remote repository or any commits.', 'Reset Git Repository', 'Reset')) return;
+    const btn = document.getElementById('gitResetBtn');
+    if (btn) { btn.disabled = true; }
+    try {
+        const res  = await fetch('/api/backup/git/repo', { method: 'DELETE', headers: _csrfHeaders() });
+        const data = await res.json();
+        if (data.ok) {
+            showToast('Repository reset - push again to re-initialize', 'success');
+            loadGitStatus();
+            loadGitCommits();
+            if (typeof fetchNotifications === 'function') fetchNotifications();
+        } else {
+            showToast('Reset failed: ' + (data.error || 'Unknown'), 'error');
+        }
+    } catch(e) { showToast('Reset failed', 'error'); }
+    finally {
+        if (btn) { btn.disabled = false; }
     }
 }
 

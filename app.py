@@ -81,7 +81,8 @@ def _decrypt_otp_secret(token: str) -> str:
     try:
         return _get_otp_fernet().decrypt(token.encode()).decode()
     except (InvalidToken, Exception):
-        return token
+        logger.warning("Failed to decrypt secret (encryption key mismatch?) - treating as empty")
+        return ''
 
 
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=7)
@@ -1293,7 +1294,12 @@ def login_otp():
         code     = request.form.get('code', '').strip()
         settings = load_settings()
         secret   = settings.get('otp_secret', '')
-        if secret and pyotp.TOTP(secret).verify(code, valid_window=1):
+        try:
+            otp_valid = secret and pyotp.TOTP(secret).verify(code, valid_window=1)
+        except Exception:
+            logger.exception("OTP verify error - secret may be corrupt")
+            otp_valid = False
+        if otp_valid:
             remember       = session.get('otp_remember', True)
             must_change    = session.get('otp_must_change', False)
             setup_complete = session.get('otp_setup_complete', False)
@@ -2334,6 +2340,9 @@ def _git_ensure_repo():
     auth_url = _git_auth_url(repo_url, username, token)
     repo_dir = _git_repo_dir()
     if not os.path.exists(os.path.join(repo_dir, '.git')):
+        if os.path.exists(repo_dir) and os.listdir(repo_dir):
+            shutil.rmtree(repo_dir)
+            logger.info("Git repo dir was non-empty without .git - cleared for fresh clone")
         os.makedirs(repo_dir, exist_ok=True)
         _, _, rc = _git_run(['clone', '--branch', branch, auth_url, '.'], cwd=repo_dir)
         if rc != 0:
@@ -2523,6 +2532,22 @@ def api_git_backup_restore(sha):
     except Exception as e:
         logger.exception("Git restore error")
         add_notification('error', f'Git restore failed: {e}')
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/backup/git/repo', methods=['DELETE'])
+@csrf_protect
+@login_required
+def api_git_backup_reset():
+    repo_dir = _git_repo_dir()
+    try:
+        if os.path.exists(repo_dir):
+            shutil.rmtree(repo_dir)
+        logger.info("Git repo directory reset by user")
+        add_notification('warning', 'Git repository reset - re-initialize by pushing again')
+        return jsonify({'ok': True})
+    except Exception as e:
+        logger.exception("Git repo reset error")
         return jsonify({'error': str(e)}), 500
 
 
