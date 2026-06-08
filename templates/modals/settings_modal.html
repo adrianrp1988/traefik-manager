@@ -990,7 +990,7 @@
                                 <div id="agentRotateKeyBanner" style="display:none;" class="mt-4">
                                     <div class="px-3 py-2.5 rounded-lg text-xs flex items-center gap-3" style="background:rgba(36,161,222,0.08);border:1px solid rgba(36,161,222,0.25);color:var(--muted)">
                                         <i class="ph-bold ph-key flex-shrink-0" style="color:var(--blue)"></i>
-                                        <span style="flex:1">API key is hidden after first creation. Rotate to get a new one - this immediately invalidates the old key.</span>
+                                        <span style="flex:1">API key is hidden after first creation. Use the key already in your running agent compose - do not rotate unless you want to invalidate the old key and reconfigure your agent.</span>
                                         <button id="agentRotateKeyBtn" onclick="rotateAgentKey()" class="btn-secondary text-xs py-1 px-2.5 flex-shrink-0" style="white-space:nowrap"><i class="ph-bold ph-arrows-clockwise text-xs"></i> Rotate Key</button>
                                     </div>
                                     <div id="agentRotatedKeyDisplay" style="display:none;" class="mt-2">
@@ -2485,7 +2485,7 @@ function buildAgentCfgPayload() {
 }
 
 function agentCfgChanged() {
-    const key       = _agentWizKey || 'YOUR_API_KEY';
+    const key       = _agentWizKey || '<your-api-key>';
     const traefik   = document.getElementById('agCfgTraefikUrl').value.trim() || 'http://traefik:8080';
     const configPath= document.getElementById('agCfgConfigPath').value.trim() || '/app/config';
     const staticPath= document.getElementById('agCfgStaticPath').value.trim();
