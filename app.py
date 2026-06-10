@@ -4009,7 +4009,30 @@ def save_entry():
             create_backup(target_path)
             config = load_config(target_path)
 
-        plain_original_id = original_id.split('::', 1)[1] if '::' in original_id else original_id
+        orig_parts = original_id.split('::', 1)
+        plain_original_id = orig_parts[1] if len(orig_parts) > 1 else original_id
+        orig_cfg_file = orig_parts[0] if len(orig_parts) > 1 else cfg_filename
+
+        if is_edit and plain_original_id and orig_cfg_file != cfg_filename:
+            if agent:
+                old_all_cfgs = _agent_load_configs(agent)
+                old_config = old_all_cfgs.get(orig_cfg_file, {})
+            else:
+                orig_target_path = _resolve_config_path(orig_cfg_file)
+                old_config = load_config(orig_target_path) if orig_target_path else {}
+            for sec in ('http', 'tcp', 'udp'):
+                s = old_config.get(sec, {})
+                old_routers = s.get('routers', {})
+                old_svc = (old_routers.get(plain_original_id, {}).get('service') or '').strip()
+                if plain_original_id in old_routers:
+                    del old_routers[plain_original_id]
+                if old_svc and 'services' in s and old_svc in s['services']:
+                    del s['services'][old_svc]
+            if agent:
+                _agent_write_config(agent, orig_cfg_file, old_config)
+            elif orig_target_path:
+                save_config(_strip_empty_sections(old_config), orig_target_path)
+
         if is_edit and plain_original_id:
             for sec in ('http', 'tcp', 'udp'):
                 s = config.get(sec, {})
