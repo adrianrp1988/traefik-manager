@@ -1760,6 +1760,39 @@ def api_cs_alerts():
         logger.exception("CrowdSec alerts error")
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/crowdsec/decisions', methods=['POST'])
+@csrf_protect
+@login_required
+def api_cs_add_decision():
+    lapi = _cs_lapi_url()
+    key  = _cs_api_key()
+    if not (lapi and key):
+        return jsonify({'error': 'CrowdSec not configured'}), 503
+    data     = request.get_json() or {}
+    ip       = data.get('value', '').strip()
+    dtype    = data.get('type', 'ban').strip()
+    duration = data.get('duration', '24h').strip()
+    reason   = (data.get('reason', '') or '').strip() or 'manual ban from Traefik Manager'
+    if not ip:
+        return jsonify({'error': 'IP/Range is required'}), 400
+    if dtype not in ('ban', 'captcha', 'bypass'):
+        return jsonify({'error': 'Invalid type'}), 400
+    now = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+    payload = [{
+        'capacity': 0,
+        'decisions': [{'duration': duration, 'origin': 'manual', 'scenario': reason,
+                       'scope': 'Ip', 'type': dtype, 'value': ip, 'simulated': False}],
+        'events': [], 'events_count': 1, 'labels': None, 'leakspeed': '0',
+        'message': reason, 'scenario': reason, 'scenario_hash': '', 'scenario_version': '',
+        'simulated': False,
+        'source': {'ip': ip, 'scope': 'Ip', 'value': ip},
+        'start_at': now, 'stop_at': now,
+    }]
+    result = _cs_request('POST', '/v1/alerts', lapi=lapi, key=key, json=payload)
+    if result is None:
+        return jsonify({'error': 'Failed to add decision - check LAPI permissions'}), 502
+    return jsonify({'ok': True})
+
 @app.route('/api/crowdsec/decisions/<int:decision_id>', methods=['DELETE'])
 @csrf_protect
 @login_required

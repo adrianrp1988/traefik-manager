@@ -290,7 +290,7 @@ Add routes, manage middlewares, monitor services, and view TLS certificates - al
 - **Certs** - `acme.json` certificates with expiry tracking
 - **Plugins** - plugins from your static `traefik.yml`; add, edit, and remove plugins when static config editor is enabled
 - **Logs** - parsed access log cards showing method, status, path, IP, service, and duration; click any card for a full detail panel with all fields and the raw log line
-- **CrowdSec** - active decisions (bans, captchas, bypasses) and recent alerts from a CrowdSec LAPI; unban IPs with one click. Configure via `CROWDSEC_LAPI_URL` / `CROWDSEC_API_KEY` env vars or **Settings → System Monitoring → CrowdSec**
+- **CrowdSec** - active decisions and recent alerts from a CrowdSec LAPI; add manual bans/captchas/bypasses or unban IPs with one click; stats cards show total alerts, active decisions, LAPI status, and type breakdown. Configure via `CROWDSEC_LAPI_URL` / `CROWDSEC_API_KEY` env vars or **Settings → System Monitoring → CrowdSec**
 - **Configurable file paths** - set `acme.json`, access log, and static config paths from **Settings → File Paths** without a container restart; UI setting takes priority over env vars
 
 **Multi-Server Management**

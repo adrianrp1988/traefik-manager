@@ -4124,11 +4124,16 @@ async function _populateTlsOptionsSelect() {
 
 let _csDecisions = [];
 let _csAlerts    = [];
-let _csTypeFilter = 'all';
+let _csTypeFilter    = 'all';
+let _csView          = 'decisions';
+let _csLapiOnline    = false;
+let _csDecisionsPage = 1;
+let _csBanType       = 'ban';
+const _CS_PAGE_SIZE  = 100;
 
 async function refreshCrowdSecTab() {
-    const decEl  = document.getElementById('csDecisionsTable');
-    const altEl  = document.getElementById('csAlertsTable');
+    const decEl   = document.getElementById('csDecisionsTable');
+    const altEl   = document.getElementById('csAlertsTable');
     const statsEl = document.getElementById('crowdsecStats');
     if (!decEl) return;
     const spinner = `<div class="text-center py-8" style="color:var(--muted)"><i class="ph-light ph-spinner-gap text-3xl block mb-2 animate-spin opacity-40"></i><p class="text-xs">Loading...</p></div>`;
@@ -4139,56 +4144,142 @@ async function refreshCrowdSecTab() {
             agentFetch('/api/crowdsec/decisions'),
             agentFetch('/api/crowdsec/alerts'),
         ]);
+        _csLapiOnline = decRes.ok;
         const decisions = decRes.ok ? await decRes.json() : [];
         const alerts    = altRes.ok ? await altRes.json() : [];
         _csDecisions = Array.isArray(decisions) ? decisions : [];
         _csAlerts    = Array.isArray(alerts)    ? alerts    : [];
-        _renderCsStats(_csDecisions, statsEl);
+        _csDecisionsPage = 1;
+        _renderCsStats(_csDecisions, _csAlerts, _csLapiOnline, statsEl);
         _csApplyFilters();
         if (altEl && !altRes.ok) {
             altEl.innerHTML = `<div class="text-center py-8 text-xs" style="color:var(--muted)">Alerts unavailable - bouncer key may lack read:alerts permission</div>`;
         }
     } catch(e) {
+        _csLapiOnline = false;
+        _renderCsStats([], [], false, statsEl);
         const err = `<div class="text-center py-8 text-xs" style="color:var(--muted)">Could not reach CrowdSec LAPI</div>`;
         decEl.innerHTML = err;
         if (altEl) altEl.innerHTML = err;
     }
 }
 
+function _setCsView(view, btn) {
+    _csView = view;
+    _csDecisionsPage = 1;
+    document.querySelectorAll('[id^="cs-view-"]').forEach(b => b.classList.remove('active-http'));
+    if (btn) btn.classList.add('active-http');
+    const typeFilter   = document.getElementById('csTypeFilter');
+    const addBtn       = document.getElementById('csAddDecisionBtn');
+    const decSection   = document.getElementById('csDecisionsSection');
+    const altSection   = document.getElementById('csAlertsSection');
+    const isDecisions  = view === 'decisions';
+    if (typeFilter) typeFilter.style.display  = isDecisions ? '' : 'none';
+    if (addBtn)     addBtn.style.display      = isDecisions ? '' : 'none';
+    if (decSection) decSection.style.display  = isDecisions ? '' : 'none';
+    if (altSection) altSection.style.display  = isDecisions ? 'none' : '';
+    _csApplyFilters();
+}
+
 function _setCsType(type, btn) {
     _csTypeFilter = type;
+    _csDecisionsPage = 1;
     document.querySelectorAll('[id^="cs-type-"]').forEach(b => b.classList.remove('active-http'));
-    btn.classList.add('active-http');
+    if (btn) btn.classList.add('active-http');
+    _csApplyFilters();
+}
+
+function _setCsPage(n) {
+    _csDecisionsPage = n;
     _csApplyFilters();
 }
 
 function _csApplyFilters() {
     const q = (document.getElementById('csSearch')?.value || '').toLowerCase().trim();
-    const decEl = document.getElementById('csDecisionsTable');
-    const altEl = document.getElementById('csAlertsTable');
-    const filtered = _csDecisions.filter(d => {
-        if (_csTypeFilter !== 'all' && d.type !== _csTypeFilter) return false;
-        if (q && !((d.value||'').toLowerCase().includes(q) || (d.scenario||'').toLowerCase().includes(q) || (d.origin||'').toLowerCase().includes(q))) return false;
-        return true;
-    });
-    const filteredAlerts = _csAlerts.filter(a => {
-        if (!q) return true;
-        const ip = (a.source && a.source.ip) ? a.source.ip : '';
-        return ip.toLowerCase().includes(q) || (a.scenario||'').toLowerCase().includes(q);
-    });
-    if (decEl) _renderCsDecisions(filtered, decEl);
-    if (altEl) _renderCsAlerts(filteredAlerts, altEl);
+    if (_csView === 'decisions') {
+        const decEl  = document.getElementById('csDecisionsTable');
+        const filtered = _csDecisions.filter(d => {
+            if (_csTypeFilter !== 'all' && d.type !== _csTypeFilter) return false;
+            if (q && !((d.value||'').toLowerCase().includes(q) || (d.scenario||'').toLowerCase().includes(q) || (d.origin||'').toLowerCase().includes(q))) return false;
+            return true;
+        });
+        if (decEl) _renderCsDecisions(filtered, decEl);
+    } else {
+        const altEl = document.getElementById('csAlertsTable');
+        const filteredAlerts = _csAlerts.filter(a => {
+            if (!q) return true;
+            const ip = (a.source && a.source.ip) ? a.source.ip : '';
+            return ip.toLowerCase().includes(q) || (a.scenario||'').toLowerCase().includes(q);
+        });
+        if (altEl) _renderCsAlerts(filteredAlerts, altEl);
+    }
 }
 
-function _renderCsStats(decisions, el) {
+function openCsBanModal() {
+    document.getElementById('csBanIp').value       = '';
+    document.getElementById('csBanReason').value   = '';
+    document.getElementById('csBanDuration').value = '24h';
+    const errEl = document.getElementById('csBanError');
+    if (errEl) errEl.style.display = 'none';
+    _setCsBanType('ban');
+    document.getElementById('csBanModal').style.display = '';
+    setTimeout(() => document.getElementById('csBanIp')?.focus(), 50);
+}
+
+function closeCsBanModal() {
+    document.getElementById('csBanModal').style.display = 'none';
+}
+
+function _setCsBanType(type, btn) {
+    _csBanType = type;
+    document.querySelectorAll('[id^="csBanType-"]').forEach(b => b.classList.remove('active-http'));
+    const el = document.getElementById('csBanType-' + type);
+    if (el) el.classList.add('active-http');
+}
+
+async function submitCsBan() {
+    const ip = (document.getElementById('csBanIp')?.value || '').trim();
+    const errEl   = document.getElementById('csBanError');
+    const errMsg  = document.getElementById('csBanErrorMsg');
+    const submitBtn = document.querySelector('#csBanModal button[onclick="submitCsBan()"]');
+    if (errEl) errEl.style.display = 'none';
+    if (!ip) {
+        if (errEl && errMsg) { errMsg.textContent = 'IP/Range is required'; errEl.style.display = 'flex'; }
+        return;
+    }
+    const duration = document.getElementById('csBanDuration')?.value || '24h';
+    const reason   = (document.getElementById('csBanReason')?.value || '').trim();
+    if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Adding...'; }
+    try {
+        const res = await agentFetch('/api/crowdsec/decisions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ..._csrfHeaders() },
+            body: JSON.stringify({ value: ip, type: _csBanType, duration, reason }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to add decision');
+        closeCsBanModal();
+        addNotification('success', `Decision added: ${_csBanType} ${ip} for ${duration}`);
+        setTimeout(refreshCrowdSecTab, 800);
+    } catch(e) {
+        if (errEl && errMsg) { errMsg.textContent = e.message || 'Failed to add decision'; errEl.style.display = 'flex'; }
+    } finally {
+        if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Add Decision'; }
+    }
+}
+
+function _renderCsStats(decisions, alerts, lapiOnline, el) {
     if (!el) return;
-    const bans      = decisions.filter(d => d.type === 'ban').length;
-    const captchas  = decisions.filter(d => d.type === 'captcha').length;
-    const bypasses  = decisions.filter(d => d.type === 'bypass').length;
+    const bans     = decisions.filter(d => d.type === 'ban').length;
+    const captchas = decisions.filter(d => d.type === 'captcha').length;
+    const bypasses = decisions.filter(d => d.type === 'bypass').length;
     const stats = [
-        { label: 'Active Bans',     value: bans,     color: 'var(--red)',    icon: 'ph-prohibit' },
-        { label: 'Captchas',        value: captchas,  color: 'var(--yellow)', icon: 'ph-puzzle-piece' },
-        { label: 'Bypasses',        value: bypasses,  color: 'var(--green)',  icon: 'ph-check-circle' },
+        { label: 'Total Alerts',     value: alerts.length,    color: 'var(--blue)',   icon: 'ph-shield-slash' },
+        { label: 'Active Decisions', value: decisions.length, color: 'var(--red)',    icon: 'ph-crosshair-simple' },
+        { label: 'LAPI Status',      value: lapiOnline ? 'Online' : 'Offline', color: lapiOnline ? 'var(--green)' : 'var(--red)', icon: 'ph-pulse', isStatus: true },
+        { label: 'Active Bans',      value: bans,             color: 'var(--red)',    icon: 'ph-prohibit' },
+        { label: 'Captchas',         value: captchas,         color: 'var(--yellow)', icon: 'ph-puzzle-piece' },
+        { label: 'Bypasses',         value: bypasses,         color: 'var(--green)',  icon: 'ph-check-circle' },
     ];
     el.innerHTML = stats.map(s => `
         <div class="rounded-xl p-4" style="background:var(--card);border:1px solid var(--border)">
@@ -4196,20 +4287,28 @@ function _renderCsStats(decisions, el) {
                 <span class="text-xs font-semibold uppercase tracking-wide" style="color:var(--muted)">${s.label}</span>
                 <i class="ph-bold ${s.icon} text-base" style="color:${s.color};opacity:0.7"></i>
             </div>
-            <div class="text-3xl font-bold" style="color:${s.value > 0 ? s.color : 'var(--muted)'}">${s.value}</div>
+            <div class="text-2xl font-bold" style="color:${(s.isStatus || s.value > 0) ? s.color : 'var(--muted)'}">${s.value}</div>
         </div>`).join('');
 }
 
-function _renderCsDecisions(decisions, el) {
-    document.getElementById('csDecisionCount').textContent = decisions.length;
-    if (decisions.length === 0) {
+function _renderCsDecisions(allFiltered, el) {
+    const total     = allFiltered.length;
+    const totalPages = Math.max(1, Math.ceil(total / _CS_PAGE_SIZE));
+    if (_csDecisionsPage > totalPages) _csDecisionsPage = totalPages;
+    const start    = (_csDecisionsPage - 1) * _CS_PAGE_SIZE;
+    const decisions = allFiltered.slice(start, start + _CS_PAGE_SIZE);
+
+    const countEl = document.getElementById('csDecisionCount');
+    if (countEl) countEl.textContent = total;
+
+    if (total === 0) {
         el.innerHTML = `<div class="text-center py-10 text-xs" style="color:var(--muted)">No active decisions</div>`;
         return;
     }
     const rows = decisions.map(d => {
-        const until = d.until ? new Date(d.until).toLocaleString() : (d.duration || '-');
+        const until    = d.until ? new Date(d.until).toLocaleString() : (d.duration || '-');
         const scenario = _esc(d.scenario || '-');
-        const origin = _esc(d.origin || '-');
+        const origin   = _esc(d.origin || '-');
         return `<tr style="border-top:1px solid var(--border)">
             <td class="px-3 py-2 font-mono text-xs" style="color:var(--text)">${_esc(d.value || '-')}</td>
             <td class="px-3 py-2 text-xs"><span class="badge ${d.type === 'ban' ? 'badge-red' : d.type === 'captcha' ? 'badge-yellow' : 'badge-green'}">${_esc(d.type || '-')}</span></td>
@@ -4221,6 +4320,17 @@ function _renderCsDecisions(decisions, el) {
             </td>
         </tr>`;
     }).join('');
+
+    const paginationBar = totalPages > 1 ? `
+        <div class="flex items-center justify-between px-3 py-2" style="border-top:1px solid var(--border);background:var(--input-bg)">
+            <span class="text-xs" style="color:var(--muted)">Showing ${start + 1}-${Math.min(start + _CS_PAGE_SIZE, total)} of ${total}</span>
+            <div class="flex items-center gap-1">
+                <button onclick="_setCsPage(${_csDecisionsPage - 1})" ${_csDecisionsPage <= 1 ? 'disabled' : ''} class="btn-icon text-xs" style="${_csDecisionsPage <= 1 ? 'opacity:0.3;cursor:default' : ''}"><i class="ph-bold ph-caret-left"></i></button>
+                <span class="text-xs px-2" style="color:var(--muted)">Page ${_csDecisionsPage} of ${totalPages}</span>
+                <button onclick="_setCsPage(${_csDecisionsPage + 1})" ${_csDecisionsPage >= totalPages ? 'disabled' : ''} class="btn-icon text-xs" style="${_csDecisionsPage >= totalPages ? 'opacity:0.3;cursor:default' : ''}"><i class="ph-bold ph-caret-right"></i></button>
+            </div>
+        </div>` : '';
+
     el.innerHTML = `<table class="w-full text-left" style="border-collapse:collapse">
         <thead><tr style="background:var(--input-bg)">
             <th class="px-3 py-2 text-xs font-semibold" style="color:var(--muted)">IP / Scope</th>
@@ -4231,7 +4341,7 @@ function _renderCsDecisions(decisions, el) {
             <th class="px-3 py-2 text-xs font-semibold text-right" style="color:var(--muted)">Action</th>
         </tr></thead>
         <tbody>${rows}</tbody>
-    </table>`;
+    </table>${paginationBar}`;
 }
 
 function _renderCsAlerts(alerts, el) {
