@@ -297,6 +297,11 @@
                             <div id="crowdsecSavedNotice" class="hidden text-xs px-3 py-2 rounded-md" style="background:rgba(63,185,80,0.1);border:1px solid rgba(63,185,80,0.3);color:var(--green)">
                                 <i class="ph-bold ph-check-circle mr-1"></i>CrowdSec credentials saved
                             </div>
+                            <div style="border-top:1px solid var(--border);padding-top:12px;margin-top:4px">
+                                <button onclick="resetCrowdSecConfig()" class="btn-secondary text-xs py-1 px-2.5" style="color:var(--red);border-color:var(--red)">
+                                    <i class="ph-bold ph-trash mr-1"></i>Remove CrowdSec configuration
+                                </button>
+                            </div>
                         </div>
 
                     </div>
@@ -1690,6 +1695,14 @@ async function saveSettings() {
     } catch(e) {
         showToast('Failed to save settings', 'error');
     }
+}
+
+async function resetCrowdSecConfig() {
+    if (!confirm('Remove the saved CrowdSec LAPI URL and API key?')) return;
+    document.getElementById('settingsCrowdSecUrl').value = '';
+    document.getElementById('settingsCrowdSecKey').value = '';
+    document.getElementById('crowdsecKeySetHint')?.classList.add('hidden');
+    await saveSettings();
 }
 
 async function testTraefikApi() {
