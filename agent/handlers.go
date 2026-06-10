@@ -60,6 +60,45 @@ func (a *App) traefikProxy(w http.ResponseWriter, r *http.Request, traefikPath s
 	io.Copy(w, resp.Body)
 }
 
+func (a *App) traefikFetchProto(ctx context.Context, traefikPath string) json.RawMessage {
+	target := strings.TrimRight(a.cfg.TraefikAPIURL, "/") + traefikPath
+	ctx2, cancel := context.WithTimeout(ctx, 12*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx2, http.MethodGet, target, nil)
+	if err != nil {
+		return json.RawMessage("[]")
+	}
+	resp, err := a.httpClient.Do(req)
+	if err != nil {
+		return json.RawMessage("[]")
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return json.RawMessage("[]")
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return json.RawMessage("[]")
+	}
+	return json.RawMessage(body)
+}
+
+func (a *App) routersHandler(w http.ResponseWriter, r *http.Request) {
+	jsonOK(w, map[string]json.RawMessage{
+		"http": a.traefikFetchProto(r.Context(), "/api/http/routers"),
+		"tcp":  a.traefikFetchProto(r.Context(), "/api/tcp/routers"),
+		"udp":  a.traefikFetchProto(r.Context(), "/api/udp/routers"),
+	})
+}
+
+func (a *App) servicesHandler(w http.ResponseWriter, r *http.Request) {
+	jsonOK(w, map[string]json.RawMessage{
+		"http": a.traefikFetchProto(r.Context(), "/api/http/services"),
+		"tcp":  a.traefikFetchProto(r.Context(), "/api/tcp/services"),
+		"udp":  a.traefikFetchProto(r.Context(), "/api/udp/services"),
+	})
+}
+
 // ---- config files -----------------------------------------------------------
 
 type fileEntry struct {

@@ -1712,7 +1712,8 @@ def api_cs_decisions():
     try:
         all_decisions = []
         page = 1
-        while True:
+        MAX_CS_PAGES = 10
+        while page <= MAX_CS_PAGES:
             chunk = _cs_request('GET', f'/v1/decisions?limit=500&page={page}', lapi=lapi, key=key)
             if not isinstance(chunk, list):
                 break
@@ -1747,7 +1748,7 @@ def api_cs_alerts():
     try:
         all_alerts = []
         page = 1
-        while True:
+        while page <= 5:
             chunk = _cs_request('GET', f'/v1/alerts?limit=200&page={page}', lapi=lapi, key=key)
             if not isinstance(chunk, list):
                 break
@@ -3250,10 +3251,36 @@ def _load_config_display(path):
     with open(path, 'r') as f:
         raw = f.read()
     sanitized, mapping = _sanitize_go_templates(raw)
-    data = yaml.load(sanitized)
+    try:
+        data = yaml.load(sanitized)
+    except Exception:
+        _y2 = YAML()
+        _y2.allow_duplicate_keys = True
+        try:
+            data = _y2.load(sanitized)
+        except Exception:
+            return {}
     if not data or not isinstance(data, dict):
         return {}
     return _restore_go_templates(data, mapping) if mapping else data
+
+
+def _get_config_parse_errors():
+    errors = []
+    for p in CONFIG_PATHS:
+        if not os.path.exists(p):
+            continue
+        try:
+            with open(p, 'r') as f:
+                raw = f.read()
+            sanitized, _ = _sanitize_go_templates(raw)
+            _y = YAML()
+            _y.load(sanitized)
+        except Exception as e:
+            msg = str(e)
+            first_line = next((l.strip() for l in msg.splitlines() if l.strip()), msg)
+            errors.append({'file': os.path.basename(p), 'error': first_line})
+    return errors
 
 def load_config(path=None):
     if path is None:
@@ -3648,7 +3675,7 @@ def _toggle_route(route_id: str, enable: bool):
 def api_routes():
     apps, middlewares = _build_all_apps(include_external=False)
     apps = [a for a in apps if not (a.get('service_name') or '').endswith('@internal')]
-    return jsonify({'apps': apps, 'middlewares': middlewares})
+    return jsonify({'apps': apps, 'middlewares': middlewares, 'configErrors': _get_config_parse_errors()})
 
 
 @app.route('/api/routes/all')
