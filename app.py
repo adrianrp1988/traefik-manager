@@ -1386,6 +1386,7 @@ def api_change_password():
         auth_enabled=settings['auth_enabled'],
         password_hash=_hash_password(new_pw),
         visible_tabs=settings['visible_tabs'],
+        must_change_password=False,
     )
     logger.info(f"Password changed successfully from {request.remote_addr}")
     return jsonify({'success': True})
