@@ -28,7 +28,7 @@ When a remote agent is active:
 - **Static Config** (Settings - Static Config) - Available if the agent has `STATIC_CONFIG_PATH` set. Raw YAML editing is supported; section-based editing (entrypoints, cert resolvers, etc.) is available only on the Host. Traefik restart works if the agent has `RESTART_METHOD` configured.
 - **Backups** (Settings - Backups) - Shows the agent's local `.bak` backup files. The agent creates a `.bak` automatically before every config write; you can also create a manual backup at any time. Restore, delete, and git history operations all proxy through the agent. Git backup configuration fields are hidden (managed via `GIT_BACKUP_*` env vars on the agent). The Static Config backup sub-tab is not shown for agents.
 - **CrowdSec** - If the agent has `CROWDSEC_LAPI_URL` and `CROWDSEC_API_KEY` configured, the CrowdSec tab shows that server's decisions and alerts.
-- **Settings sidebar** - When an agent is active, only agent-relevant Settings panels are shown: Backups, Route Monitoring tab toggles, Static Config (if configured), and System Monitoring tab toggles. Authentication, Connection, Notifications, and Templates are hidden - they only apply to the Host.
+- **Settings sidebar** - When an agent is active, only agent-relevant Settings panels are shown: Backups, Route Monitoring tab toggles, Static Config (if configured), System Monitoring tab toggles, and Templates. Authentication, Connection, and Notifications are hidden - they only apply to the Host.
 
 ## Install via installer script
 
