@@ -4271,6 +4271,24 @@ def save_middleware():
                 return jsonify({'ok': False, 'message': 'Middleware name is required'}), 400
             flash("Middleware name is required", "error")
             return redirect(url_for('index'))
+        if not mw_content:
+            if fetch:
+                return jsonify({'ok': False, 'message': 'Middleware content cannot be empty'}), 400
+            flash("Middleware content cannot be empty", "error")
+            return redirect(url_for('index'))
+        try:
+            parsed_mw = SafeYAML(typ='safe').load(mw_content)
+        except Exception as ye:
+            msg = f'Invalid YAML: {ye}'
+            if fetch:
+                return jsonify({'ok': False, 'message': msg}), 400
+            flash(msg, "error")
+            return redirect(url_for('index'))
+        if parsed_mw is None or not isinstance(parsed_mw, dict) or not parsed_mw:
+            if fetch:
+                return jsonify({'ok': False, 'message': 'Middleware content is empty or invalid'}), 400
+            flash("Middleware content is empty or invalid", "error")
+            return redirect(url_for('index'))
         if agent:
             config = _agent_load_configs(agent).get(cfg_filename, {})
         else:
@@ -4279,7 +4297,7 @@ def save_middleware():
         config.setdefault('http', {}).setdefault('middlewares', {})
         if is_edit and original_id and original_id != mw_name:
             config['http']['middlewares'].pop(original_id, None)
-        config['http']['middlewares'][mw_name] = SafeYAML(typ='safe').load(mw_content)
+        config['http']['middlewares'][mw_name] = parsed_mw
         if agent:
             _agent_write_config(agent, cfg_filename, config)
         else:

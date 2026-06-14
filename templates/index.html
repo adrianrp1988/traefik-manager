@@ -1335,8 +1335,10 @@ async function saveMwAjax(event) {
             if (!url) { showToast('Gatekeeper URL is required', 'error'); return; }
         }
         buildYamlFromWizard();
-    } else if (_mwMonacoEditor) {
-        document.getElementById('middlewareContent').value = _mwMonacoEditor.getValue();
+    } else {
+        const content = _mwMonacoEditor ? _mwMonacoEditor.getValue() : (document.getElementById('middlewareContent')?.value || '');
+        if (_mwMonacoEditor) document.getElementById('middlewareContent').value = content;
+        if (!content.trim()) { showToast('Middleware content cannot be empty', 'error'); return; }
     }
     const form = event.target;
     const mwFn = document.getElementById('newMwFileName');
