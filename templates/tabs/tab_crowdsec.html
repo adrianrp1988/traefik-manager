@@ -9,21 +9,21 @@
     </div>
 
     <div class="flex flex-wrap gap-2 mb-4 items-center filter-bar">
-        <div class="relative flex-1 min-w-48">
+        <div class="relative flex-1 min-w-0">
             <i class="ph-bold ph-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-sm" style="color:var(--muted)"></i>
             <input type="text" id="csSearch" oninput="_csDecisionsPage=1;_csApplyFilters()" placeholder="Filter by IP or scenario..." class="input-field pl-9">
         </div>
         <div class="flex gap-1 p-1 rounded-lg" style="background:var(--input-bg);border:1px solid var(--border)">
-            <button onclick="_setCsView('decisions',this)" id="cs-view-decisions" class="proto-btn active-http text-xs px-3 py-1.5">Active Decisions</button>
-            <button onclick="_setCsView('alerts',this)" id="cs-view-alerts" class="proto-btn text-xs px-3 py-1.5">Recent Alerts</button>
+            <button onclick="_setCsView('decisions',this)" id="cs-view-decisions" class="proto-btn active-http text-xs px-3 py-1.5">Decisions</button>
+            <button onclick="_setCsView('alerts',this)" id="cs-view-alerts" class="proto-btn text-xs px-3 py-1.5">Alerts</button>
         </div>
-        <div id="csTypeFilter" class="flex gap-1 p-1 rounded-lg" style="background:var(--input-bg);border:1px solid var(--border)">
+        <div id="csTypeFilter" class="flex gap-1 p-1 rounded-lg fb-secondary" style="background:var(--input-bg);border:1px solid var(--border)">
             <button onclick="_setCsType('all',this)" id="cs-type-all" class="proto-btn active-http text-xs px-3 py-1.5">All</button>
             <button onclick="_setCsType('ban',this)" id="cs-type-ban" class="proto-btn text-xs px-3 py-1.5">Ban</button>
             <button onclick="_setCsType('captcha',this)" id="cs-type-captcha" class="proto-btn text-xs px-3 py-1.5">Captcha</button>
             <button onclick="_setCsType('bypass',this)" id="cs-type-bypass" class="proto-btn text-xs px-3 py-1.5">Bypass</button>
         </div>
-        <div id="csAddDecisionBtn" class="flex gap-1 p-1 rounded-lg" style="background:var(--input-bg);border:1px solid var(--border)">
+        <div id="csAddDecisionBtn" class="flex gap-1 p-1 rounded-lg fb-secondary" style="background:var(--input-bg);border:1px solid var(--border)">
             <button onclick="openCsBanModal()" class="proto-btn text-xs px-3 py-1.5"><i class="ph-bold ph-plus"></i> Add Decision</button>
         </div>
         <div class="flex gap-1 p-1 rounded-lg" style="background:var(--input-bg);border:1px solid var(--border)">

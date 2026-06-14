@@ -417,35 +417,38 @@ function _renderServerSwitcherList(runHealthChecks) {
     const agents = _agentList;
     const wrap = document.getElementById('serverSwitcherWrap');
     const list = document.getElementById('serverSwitcherList');
+    const mobileSection = document.getElementById('mobileServerSwitcherSection');
+    const mobileList = document.getElementById('mobileServerSwitcherList');
     if (!wrap || !list) return;
     wrap.style.display = agents.length ? '' : 'none';
+    if (mobileSection) mobileSection.style.display = agents.length ? '' : 'none';
     const localActive = !_activeAgent;
-    list.innerHTML = `
-        <div class="notif-item${localActive ? ' active' : ''}" onclick="switchServer(null)" style="cursor:pointer;${localActive?'background:var(--input-bg);':''}">
+    const desktopItem = (id, label, dotColor, active, dotId) =>
+        `<div class="notif-item${active ? ' active' : ''}" onclick="${id ? `switchServer('${id}')` : 'switchServer(null)'}" style="cursor:pointer;${active?'background:var(--input-bg);':''}">
             <div class="flex items-center gap-2 py-1">
-                <span class="w-2 h-2 rounded-full flex-shrink-0" style="background:var(--green)"></span>
-                <span class="text-xs font-medium" style="color:var(--text)">Host</span>
-                ${localActive ? '<i class="ph-bold ph-check text-xs ml-auto" style="color:var(--blue)"></i>' : ''}
+                <span class="w-2 h-2 rounded-full flex-shrink-0" style="background:${dotColor}"${dotId ? ` id="${dotId}"` : ''}></span>
+                <div style="min-width:0;flex:1;"><div class="text-xs font-medium truncate" style="color:var(--text)">${label}</div></div>
+                ${active ? '<i class="ph-bold ph-check text-xs ml-auto flex-shrink-0" style="color:var(--blue)"></i>' : ''}
             </div>
-        </div>` +
-        agents.map(a => {
-            const active = _activeAgent && _activeAgent.id === a.id;
-            const dotColor = _agentHealthCache[a.id] || 'var(--muted)';
-            return `<div class="notif-item${active?' active':''}" onclick="switchServer('${a.id}')" style="cursor:pointer;${active?'background:var(--input-bg);':''}">
-                <div class="flex items-center gap-2 py-1">
-                    <span class="w-2 h-2 rounded-full flex-shrink-0" style="background:${dotColor}" id="ss-dot-${a.id}"></span>
-                    <div style="min-width:0;flex:1;">
-                        <div class="text-xs font-medium truncate" style="color:var(--text)">${_esc(a.name)}</div>
-                    </div>
-                    ${active ? '<i class="ph-bold ph-check text-xs ml-auto flex-shrink-0" style="color:var(--blue)"></i>' : ''}
-                </div>
-            </div>`;
-        }).join('');
+        </div>`;
+    const mobileItem = (id, label, dotColor, active, dotId) =>
+        `<button onclick="${id ? `switchServer('${id}');` : 'switchServer(null);'}closeMobileMenu()" class="mobile-menu-item" style="${active?'background:var(--input-bg);':''}">
+            <span class="w-2 h-2 rounded-full flex-shrink-0" style="background:${dotColor}"${dotId ? ` id="m-ss-dot-${id}"` : ''}></span>
+            <span style="flex:1;text-align:left">${label}</span>
+            ${active ? '<i class="ph-bold ph-check text-xs" style="color:var(--blue)"></i>' : ''}
+        </button>`;
+    const hostDot = 'var(--green)';
+    list.innerHTML = desktopItem(null, 'Host', hostDot, localActive, null) +
+        agents.map(a => desktopItem(a.id, _esc(a.name), _agentHealthCache[a.id] || 'var(--muted)', _activeAgent && _activeAgent.id === a.id, 'ss-dot-' + a.id)).join('');
+    if (mobileList) mobileList.innerHTML = mobileItem(null, 'Host', hostDot, localActive, null) +
+        agents.map(a => mobileItem(a.id, _esc(a.name), _agentHealthCache[a.id] || 'var(--muted)', _activeAgent && _activeAgent.id === a.id, a.id)).join('');
     if (runHealthChecks) {
         agents.forEach(a => fetch('/api/agents/' + a.id + '/health').then(r => r.json()).then(d => {
             _agentHealthCache[a.id] = d.ok ? 'var(--green)' : 'var(--red)';
             const dot = document.getElementById('ss-dot-' + a.id);
             if (dot) dot.style.background = _agentHealthCache[a.id];
+            const mdot = document.getElementById('m-ss-dot-' + a.id);
+            if (mdot) mdot.style.background = _agentHealthCache[a.id];
         }).catch(() => { _agentHealthCache[a.id] = 'var(--red)'; }));
     }
 }

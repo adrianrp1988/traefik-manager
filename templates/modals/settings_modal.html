@@ -1584,7 +1584,7 @@ async function openSettingsModal(panel) {
     document.body.style.overflow = 'hidden';
     _updateSettingsSidebarForAgent(!!_activeAgent);
 
-    if (window.innerWidth < 640 && !panel) {
+    if (window.innerWidth < 768 && !panel) {
         document.getElementById('settingsMobileRoot').style.display = 'flex';
         document.getElementById('settingsPanelWrapper').style.display = 'none';
         document.getElementById('settingsMobileBack').style.display = 'none';
