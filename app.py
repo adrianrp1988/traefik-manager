@@ -4221,6 +4221,19 @@ def delete_entry(router_id):
                 if deleted:
                     break
         if not deleted:
+            disabled = settings.get('disabled_routes', {})
+            if agent:
+                agent_id = request.form.get('agent_id', '').strip()
+                store_key = f"{agent_id}::{plain_id}"
+                if store_key in disabled:
+                    disabled.pop(store_key)
+                    save_settings(disabled_routes=disabled)
+                    deleted = True
+            elif plain_id in disabled:
+                disabled.pop(plain_id)
+                save_settings(disabled_routes=disabled)
+                deleted = True
+        if not deleted:
             if fetch:
                 return jsonify({'ok': False, 'message': f'Route "{plain_id}" not found'}), 404
             flash(f'Route "{plain_id}" not found', "error")
