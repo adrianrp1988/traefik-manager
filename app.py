@@ -126,6 +126,9 @@ def _parse_agent_dict(a: dict) -> dict:
         'git_backup_token':             _decrypt_otp_secret(str(a.get('git_backup_token', ''))),
         'git_backup_auto_push':         bool(a.get('git_backup_auto_push', True)),
         'git_backup_commit_message':    str(a.get('git_backup_commit_message', 'traefik-manager: {action} at {timestamp}')).strip() or 'traefik-manager: {action} at {timestamp}',
+        'tma_port':                     str(a.get('tma_port', '')).strip(),
+        'tma_rate_limit':               str(a.get('tma_rate_limit', '')).strip(),
+        'domains':                      [str(d).strip() for d in (a.get('domains') or []) if str(d).strip()],
     }
 
 
@@ -4544,7 +4547,7 @@ def _agent_load_configs(agent: dict) -> dict:
     resp = _agent_request(agent, 'GET', '/api/configs')
     resp.raise_for_status()
     result = {}
-    for f in resp.json().get('files', []):
+    for f in (resp.json() or {}).get('files') or []:
         try:
             result[f['name']] = _yaml_safe.load(f['content']) or {}
         except Exception:
@@ -4727,7 +4730,7 @@ def api_agents_update(agent_id):
                 'restart_method', 'traefik_container', 'docker_host', 'signal_file_path',
                 'crowdsec_lapi_url', 'git_backup_enabled', 'git_backup_repo',
                 'git_backup_branch', 'git_backup_username', 'git_backup_auto_push',
-                'git_backup_commit_message',
+                'git_backup_commit_message', 'tma_port', 'tma_rate_limit', 'domains',
             ]
             for field in updatable:
                 if field in data:

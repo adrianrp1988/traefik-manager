@@ -1,7 +1,6 @@
 package main
 
 import (
-	"archive/zip"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -99,6 +98,13 @@ func (a *App) servicesHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (a *App) middlewaresHandler(w http.ResponseWriter, r *http.Request) {
+	jsonOK(w, map[string]json.RawMessage{
+		"http": a.traefikFetchProto(r.Context(), "/api/http/middlewares"),
+		"tcp":  a.traefikFetchProto(r.Context(), "/api/tcp/middlewares"),
+	})
+}
+
 // ---- config files -----------------------------------------------------------
 
 type fileEntry struct {
@@ -113,7 +119,7 @@ func (a *App) configsReadHandler(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, "config path not found", http.StatusNotFound)
 		return
 	}
-	var files []fileEntry
+	files := []fileEntry{}
 	if info.IsDir() {
 		entries, err := os.ReadDir(cfgPath)
 		if err != nil {
@@ -161,6 +167,9 @@ func (a *App) configsWriteHandler(w http.ResponseWriter, r *http.Request) {
 		targetPath = filepath.Join(cfgPath, body.Name)
 	} else {
 		targetPath = cfgPath
+	}
+	if err := a.createFileBak(targetPath, body.Name); err != nil {
+		log.Printf("pre-write backup failed: %v", err)
 	}
 	if err := atomicWrite(targetPath, []byte(body.Content)); err != nil {
 		jsonError(w, "write failed: "+err.Error(), http.StatusInternalServerError)
@@ -325,6 +334,24 @@ func (a *App) backupDir() string {
 	return filepath.Join(a.cfg.BackupDir, "backups")
 }
 
+func (a *App) createFileBak(targetPath, name string) error {
+	data, err := os.ReadFile(targetPath)
+	if err != nil {
+		return nil
+	}
+	dir := a.backupDir()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	base := name
+	if base == "" {
+		base = filepath.Base(targetPath)
+	}
+	ts := time.Now().UTC().Format("20060102_150405")
+	bakName := base + "." + ts + ".bak"
+	return os.WriteFile(filepath.Join(dir, bakName), data, 0o644)
+}
+
 func (a *App) backupsListHandler(w http.ResponseWriter, r *http.Request) {
 	dir := a.backupDir()
 	entries, err := os.ReadDir(dir)
@@ -339,54 +366,51 @@ func (a *App) backupsListHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	var list []backup
 	for _, e := range entries {
-		if strings.HasSuffix(e.Name(), ".zip") {
-			info, _ := e.Info()
-			size := int64(0)
-			date := ""
-			if info != nil {
-				size = info.Size()
-				date = info.ModTime().UTC().Format(time.RFC3339)
-			}
-			list = append(list, backup{Name: e.Name(), Size: size, Date: date})
+		n := e.Name()
+		if !strings.HasSuffix(n, ".bak") {
+			continue
 		}
+		info, _ := e.Info()
+		size := int64(0)
+		date := ""
+		if info != nil {
+			size = info.Size()
+			date = info.ModTime().UTC().Format(time.RFC3339)
+		}
+		list = append(list, backup{Name: n, Size: size, Date: date})
 	}
 	jsonOK(w, map[string]any{"backups": list})
 }
 
 func (a *App) backupCreateHandler(w http.ResponseWriter, r *http.Request) {
-	name, err := a.createBackup()
+	names, err := a.createBackup()
 	if err != nil {
 		jsonError(w, "backup failed: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
-	jsonOK(w, map[string]any{"ok": true, "name": name})
+	last := ""
+	if len(names) > 0 {
+		last = names[len(names)-1]
+	}
+	jsonOK(w, map[string]any{"ok": true, "name": last})
 }
 
-func (a *App) createBackup() (string, error) {
+func (a *App) createBackup() ([]string, error) {
 	dir := a.backupDir()
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return "", err
+		return nil, err
 	}
-	ts := time.Now().UTC().Format("20060102-150405")
-	name := "backup-" + ts + ".zip"
-	path := filepath.Join(dir, name)
-	f, err := os.Create(path)
-	if err != nil {
-		return "", err
-	}
-	defer f.Close()
-	zw := zip.NewWriter(f)
-	defer zw.Close()
-	addFile := func(src string) {
+	ts := time.Now().UTC().Format("20060102_150405")
+	var names []string
+	bakFile := func(src, base string) {
 		data, err := os.ReadFile(src)
 		if err != nil {
 			return
 		}
-		w, err := zw.Create(filepath.Base(src))
-		if err != nil {
-			return
+		name := base + "." + ts + ".bak"
+		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err == nil {
+			names = append(names, name)
 		}
-		w.Write(data)
 	}
 	cfgPath := a.cfg.ConfigPath
 	info, err := os.Stat(cfgPath)
@@ -394,57 +418,57 @@ func (a *App) createBackup() (string, error) {
 		if info.IsDir() {
 			entries, _ := os.ReadDir(cfgPath)
 			for _, e := range entries {
-				if !e.IsDir() {
-					addFile(filepath.Join(cfgPath, e.Name()))
+				if !e.IsDir() && (strings.HasSuffix(e.Name(), ".yml") || strings.HasSuffix(e.Name(), ".yaml")) {
+					bakFile(filepath.Join(cfgPath, e.Name()), e.Name())
 				}
 			}
 		} else {
-			addFile(cfgPath)
+			bakFile(cfgPath, filepath.Base(cfgPath))
 		}
 	}
 	if a.cfg.StaticConfigPath != "" {
-		addFile(a.cfg.StaticConfigPath)
+		bakFile(a.cfg.StaticConfigPath, filepath.Base(a.cfg.StaticConfigPath))
 	}
-	return name, nil
+	return names, nil
 }
 
 func (a *App) restoreHandler(w http.ResponseWriter, r *http.Request) {
 	filename := strings.TrimPrefix(r.URL.Path, "/api/restore/")
-	if strings.Contains(filename, "/") || strings.Contains(filename, "..") || !strings.HasSuffix(filename, ".zip") {
+	if strings.Contains(filename, "/") || strings.Contains(filename, "..") || !strings.HasSuffix(filename, ".bak") {
 		jsonError(w, "invalid filename", http.StatusBadRequest)
 		return
 	}
-	path := filepath.Join(a.backupDir(), filename)
-	zr, err := zip.OpenReader(path)
+	bakPath := filepath.Join(a.backupDir(), filename)
+	data, err := os.ReadFile(bakPath)
 	if err != nil {
-		jsonError(w, "cannot open backup: "+err.Error(), http.StatusNotFound)
+		jsonError(w, "cannot read backup: "+err.Error(), http.StatusNotFound)
 		return
 	}
-	defer zr.Close()
+	origName := strings.TrimSuffix(filename, ".bak")
+	if idx := strings.LastIndex(origName, "."); idx >= 0 {
+		candidate := origName[:idx]
+		if len(origName)-idx == 16 {
+			origName = candidate
+		}
+	}
 	cfgPath := a.cfg.ConfigPath
 	info, _ := os.Stat(cfgPath)
-	isDir := err == nil && info.IsDir()
-	for _, f := range zr.File {
-		rc, err := f.Open()
-		if err != nil {
-			continue
-		}
-		data, _ := io.ReadAll(rc)
-		rc.Close()
-		var dest string
-		if isDir {
-			dest = filepath.Join(cfgPath, f.Name)
-		} else {
-			dest = cfgPath
-		}
-		atomicWrite(dest, data)
+	var dest string
+	if info != nil && info.IsDir() {
+		dest = filepath.Join(cfgPath, origName)
+	} else {
+		dest = cfgPath
+	}
+	if err := atomicWrite(dest, data); err != nil {
+		jsonError(w, "restore failed: "+err.Error(), http.StatusInternalServerError)
+		return
 	}
 	jsonOK(w, map[string]any{"ok": true})
 }
 
 func (a *App) backupDeleteHandler(w http.ResponseWriter, r *http.Request) {
 	filename := strings.TrimPrefix(r.URL.Path, "/api/backup/delete/")
-	if strings.Contains(filename, "/") || strings.Contains(filename, "..") || !strings.HasSuffix(filename, ".zip") {
+	if strings.Contains(filename, "/") || strings.Contains(filename, "..") || !strings.HasSuffix(filename, ".bak") {
 		jsonError(w, "invalid filename", http.StatusBadRequest)
 		return
 	}

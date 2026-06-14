@@ -11,10 +11,14 @@ TMA is a lightweight Go daemon that runs alongside Traefik on a remote server. I
 
 When a remote agent is active:
 
-- **Routes and Middlewares** - All data tabs show that server's data. You can add, edit, delete, and toggle routes and middlewares on the remote server exactly as you would locally - changes are written to the agent's config files via the agent API.
+- **Routes and Middlewares** - All data tabs show that server's data. You can add, edit, delete, and toggle routes and middlewares on the remote server exactly as you would locally - changes are written to the agent's config files via the agent API. The config file selector in the Add/Edit modals shows the agent's config files (fetched live from the agent), not the local TM's files. If the agent has **Domains** configured (Settings - Agents - Traefik tab), the Add/Edit Route modal shows those domains as a selector chip - the same experience as local TM. Without domains configured, the Subdomain field becomes a free-form **Hostname** field where you enter the full hostname (e.g. `app.example.com`).
+- **Route Map** - The route map diagram shows the agent's routes and services.
+- **Tab visibility** - Provider and monitoring tab toggles (Docker, Kubernetes, Certs, Plugins, etc.) are per-server. Changes to tab visibility when on an agent are stored locally in the browser and do not affect local TM or other agents.
 - **Static Config** (Settings - Static Config) - If the agent has `STATIC_CONFIG_PATH` configured, the static config editor becomes available. Raw YAML editing is supported; section-based editing (entrypoints, cert resolvers, etc.) requires local TM. Restart Traefik works if the agent has a `RESTART_METHOD` set.
 - **Backups** (Settings - Backups) - Dynamic Config and Git backup tabs show the agent's backups. All backup, restore, and git history operations are proxied through the agent. Git backup configuration fields are hidden for agents (managed via `GIT_BACKUP_*` env vars). The Static Config backup sub-tab is not shown for agents.
-- **Settings** (all other panels) - Always refers to local TM configuration.
+- **Route Monitoring** (Settings - Route Monitoring) - Tab visibility toggles for provider tabs (Docker, Kubernetes, Swarm, etc.) are available for agents so you can customise which tabs are shown per remote server.
+- **System Monitoring** (Settings - System Monitoring) - Tab visibility toggles for Certs, Logs, Plugins, and CrowdSec are available for agents.
+- **Authentication, Connection, Notifications** (Settings) - These panels are hidden when an agent is active as they only apply to the local TM instance.
 
 ## Install via installer script
 
@@ -31,7 +35,13 @@ export TMA_INSTALL=1
 curl -fsSL https://get-traefik.xyzlab.dev | bash
 ```
 
-The installer asks for your API key and all path/feature options, then generates a `docker-compose.yml` (or systemd unit for binary installs) and starts the agent.
+The installer uses an arrow-key menu and a review screen - type a section number to go back and edit it, or press Enter to proceed. It covers all options including:
+
+- **Install method** - Docker agent only, Docker agent + Traefik (deploys both), or binary (systemd)
+- **Traefik connection** - API URL, config path, static config mount, and TLS skip-verify (prompted automatically when URL is `https://`)
+- **Traefik install** (Agent + Traefik mode) - TLS method, Let's Encrypt email, Cloudflare token, dashboard hostname, network name
+- **CrowdSec** - install alongside the agent (Docker only) or connect to an existing instance
+- **Git backup**, **optional paths**, **restart method**, **install location**
 
 ## Install via Docker manually
 
@@ -141,7 +151,13 @@ sudo systemctl enable --now tma
 | Variable | Default | Description |
 |---|---|---|
 | `TMA_PORT` | `8090` | Listening port |
-| `TMA_RATE_LIMIT` | `10` | Requests per minute per IP (0 = disabled) |
+| `TMA_RATE_LIMIT` | `300` | Requests per minute per IP (0 = disabled) |
+
+`TMA_PORT` and `TMA_RATE_LIMIT` can also be set from the **Settings - Agents** wizard. They appear as optional fields in the configuration step; leave them blank to use the defaults. The generated Docker Compose only includes these env vars when a non-default value is entered.
+
+### Domains (TM-side, not an env var)
+
+The **Domains** field in Settings - Agents (Traefik tab) is a TM-side configuration - it is not passed to the agent container. It tells TM what domains are available on this agent when creating or editing routes. Enter one or more domains separated by commas (e.g. `example.com, example.net`). When set, the Add/Edit Route modal shows a domain chip selector exactly like local TM. When left blank, the Subdomain field becomes a free-form Hostname field for the full hostname.
 
 ## Storage
 
@@ -153,7 +169,7 @@ Back up `agents.yml` alongside `manager.yml` to preserve agent registrations.
 
 - The API key is the only credential - keep it secret and use HTTPS between TM and TMA
 - Put TMA behind a reverse proxy (Traefik itself) with TLS for production use
-- `TMA_RATE_LIMIT` protects against abuse; increase it if TM is making many calls per minute
+- `TMA_RATE_LIMIT` defaults to 300 req/min - TM makes many API calls per tab switch so the default is intentionally generous; lower it only if you need to restrict access
 - The `/health` endpoint is public (no auth required) - use it for uptime monitoring
 
 ## Updating

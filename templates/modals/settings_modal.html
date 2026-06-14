@@ -21,7 +21,7 @@
                     <span style="display:flex;align-items:center;gap:12px;"><i class="ph-bold ph-sliders" style="color:var(--muted)"></i>Interface</span>
                     <i class="ph-bold ph-caret-right" style="color:var(--muted)"></i>
                 </button>
-                <button class="settings-mobile-row" onclick="switchSettingsPanel('auth')">
+                <button class="settings-mobile-row" id="msb-auth-mobile" onclick="switchSettingsPanel('auth')">
                     <span style="display:flex;align-items:center;gap:12px;"><i class="ph-bold ph-lock-key" style="color:var(--muted)"></i>Authentication</span>
                     <i class="ph-bold ph-caret-right" style="color:var(--muted)"></i>
                 </button>
@@ -29,28 +29,32 @@
                     <span style="display:flex;align-items:center;gap:12px;"><i class="ph-bold ph-sliders-horizontal" style="color:var(--muted)"></i>Static Config</span>
                     <i class="ph-bold ph-caret-right" style="color:var(--muted)"></i>
                 </button>
-                <button class="settings-mobile-row" onclick="switchSettingsPanel('backups'); loadBackups()">
+                <button class="settings-mobile-row" id="msb-backups-mobile" onclick="switchSettingsPanel('backups'); loadBackups()">
                     <span style="display:flex;align-items:center;gap:12px;"><i class="ph-bold ph-clock-counter-clockwise" style="color:var(--muted)"></i>Backups</span>
                     <i class="ph-bold ph-caret-right" style="color:var(--muted)"></i>
                 </button>
-                <button class="settings-mobile-row" onclick="switchSettingsPanel('system')">
+                <button class="settings-mobile-row" id="msb-system-mobile" onclick="switchSettingsPanel('system')">
                     <span style="display:flex;align-items:center;gap:12px;"><i class="ph-bold ph-monitor" style="color:var(--muted)"></i>System Monitoring</span>
                     <i class="ph-bold ph-caret-right" style="color:var(--muted)"></i>
                 </button>
-                <button class="settings-mobile-row" onclick="switchSettingsPanel('routes')">
+                <button class="settings-mobile-row" id="msb-routes-mobile" onclick="switchSettingsPanel('routes')">
                     <span style="display:flex;align-items:center;gap:12px;"><i class="ph-bold ph-path" style="color:var(--muted)"></i>Route Monitoring</span>
                     <i class="ph-bold ph-caret-right" style="color:var(--muted)"></i>
                 </button>
-                <button class="settings-mobile-row" onclick="switchSettingsPanel('connection')">
+                <button class="settings-mobile-row" id="msb-connection-mobile" onclick="switchSettingsPanel('connection')">
                     <span style="display:flex;align-items:center;gap:12px;"><i class="ph-bold ph-plugs-connected" style="color:var(--muted)"></i>Connection</span>
                     <i class="ph-bold ph-caret-right" style="color:var(--muted)"></i>
                 </button>
-                <button class="settings-mobile-row" onclick="switchSettingsPanel('notifications')">
+                <button class="settings-mobile-row" id="msb-notifications-mobile" onclick="switchSettingsPanel('notifications')">
                     <span style="display:flex;align-items:center;gap:12px;"><i class="ph-bold ph-bell" style="color:var(--muted)"></i>Notifications</span>
                     <i class="ph-bold ph-caret-right" style="color:var(--muted)"></i>
                 </button>
                 <button class="settings-mobile-row" onclick="switchSettingsPanel('agents'); loadAgentsList()">
                     <span style="display:flex;align-items:center;gap:12px;"><i class="ph-bold ph-robot" style="color:var(--muted)"></i>Agents</span>
+                    <i class="ph-bold ph-caret-right" style="color:var(--muted)"></i>
+                </button>
+                <button class="settings-mobile-row" id="msb-agent-keys-mobile" style="display:none" onclick="switchSettingsPanel('agent-keys'); loadActiveAgentKeys()">
+                    <span style="display:flex;align-items:center;gap:12px;"><i class="ph-bold ph-key" style="color:var(--muted)"></i>API Keys</span>
                     <i class="ph-bold ph-caret-right" style="color:var(--muted)"></i>
                 </button>
                 <button class="settings-mobile-row" onclick="switchSettingsPanel('about')">
@@ -86,6 +90,9 @@
                 </button>
                 <button class="modal-sidebar-btn" id="msb-agents" onclick="switchSettingsPanel('agents', this); loadAgentsList()">
                     <i class="ph-bold ph-robot"></i> Agents
+                </button>
+                <button class="modal-sidebar-btn" id="msb-agent-keys" style="display:none" onclick="switchSettingsPanel('agent-keys', this); loadActiveAgentKeys()">
+                    <i class="ph-bold ph-key"></i> API Keys
                 </button>
                 <button class="modal-sidebar-btn" id="msb-templates" onclick="switchSettingsPanel('templates', this); loadTemplatesList()">
                     <i class="ph-bold ph-puzzle-piece"></i> Templates
@@ -562,7 +569,7 @@
 
                                 <div id="gitStatusLine" class="text-xs mb-3 px-3 py-2 rounded-lg" style="background:var(--bg);border:1px solid var(--border);color:var(--muted);display:none;"></div>
 
-                                <div id="gitEnvNote" style="display:none;" class="text-xs mb-3 px-3 py-2 rounded-lg" style="background:rgba(36,161,222,0.06);border:1px solid rgba(36,161,222,0.2);color:var(--muted)">
+                                <div id="gitEnvNote" style="display:none;background:rgba(36,161,222,0.06);border:1px solid rgba(36,161,222,0.2);color:var(--muted)" class="text-xs mb-3 px-3 py-2 rounded-lg">
                                     <i class="ph-bold ph-info" style="color:var(--blue)"></i> Git backup on this agent is configured via environment variables (<code>GIT_BACKUP_*</code>).
                                 </div>
                                 <div id="gitConfigForm" style="display:flex;flex-direction:column;gap:10px;margin-bottom:14px;">
@@ -869,6 +876,11 @@
 
                             <div id="agentWizStep3" style="display:none;">
                                 <p class="text-xs mb-3" style="color:var(--muted)">Configure paths and options, then copy the generated install commands to your remote server.</p>
+                                <div class="mb-3">
+                                    <label class="settings-section-label">Domains <span style="color:var(--muted)">(optional, comma-separated)</span></label>
+                                    <input id="agCfgDomains" type="text" class="input-field text-xs" placeholder="example.com, other.net" oninput="agentCfgChanged()">
+                                    <p class="text-xs mt-1" style="color:var(--muted)">Domains for route creation on this agent - lets you pick a domain chip instead of typing the full hostname.</p>
+                                </div>
                                 <div class="flex gap-1 mb-4 flex-wrap" id="agentCfgTabs">
                                     <button class="auth-sub-tab active text-xs" onclick="switchAgentCfgTab('traefik',this)">Traefik</button>
                                     <button class="auth-sub-tab text-xs" onclick="switchAgentCfgTab('paths',this)">Paths</button>
@@ -897,6 +909,16 @@
                                     <div>
                                         <label class="settings-section-label">Static Config Path <span style="color:var(--muted)">(optional)</span></label>
                                         <input id="agCfgStaticPath" type="text" class="input-field text-xs" placeholder="/etc/traefik/traefik.yml" oninput="agentCfgChanged()">
+                                    </div>
+                                    <div style="display:flex;gap:8px;">
+                                        <div style="flex:1">
+                                            <label class="settings-section-label">Port <span style="color:var(--muted)">(default 8090)</span></label>
+                                            <input id="agCfgPort" type="number" class="input-field text-xs" placeholder="8090" oninput="agentCfgChanged()">
+                                        </div>
+                                        <div style="flex:1">
+                                            <label class="settings-section-label">Rate Limit <span style="color:var(--muted)">(req/min, default 300)</span></label>
+                                            <input id="agCfgRateLimit" type="number" class="input-field text-xs" placeholder="300" oninput="agentCfgChanged()">
+                                        </div>
                                     </div>
                                 </div>
 
@@ -1031,6 +1053,62 @@
                                 </div>
                             </div>
                         </div>
+                    </div>
+
+                    <div id="agentKeysView" style="display:none;flex-direction:column;height:100%;">
+                        <div class="flex items-center gap-2 px-4 py-3" style="border-bottom:1px solid var(--border);flex-shrink:0;">
+                            <button onclick="closeAgentKeys()" class="btn-icon" style="margin-right:4px"><i class="ph-bold ph-caret-left text-sm"></i></button>
+                            <div class="font-semibold text-sm" id="agentKeysTitle" style="color:var(--text)">API Keys</div>
+                            <button onclick="showAddKeyForm()" class="btn-secondary text-xs py-1 px-2.5 ml-auto"><i class="ph-bold ph-plus text-xs"></i> Add Key</button>
+                        </div>
+                        <div style="flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:10px;">
+                            <div id="agentKeysAddForm" style="display:none;flex-direction:column;gap:8px;padding:12px;border-radius:8px;border:1px solid var(--blue)" class="mb-1">
+                                <div class="text-xs font-medium" style="color:var(--text)">New API Key</div>
+                                <input id="agentKeyNameInput" type="text" class="input-field text-xs" placeholder="e.g. Mobile App" maxlength="80">
+                                <div id="agentKeyNewDisplay" style="display:none;flex-direction:column;gap:6px;">
+                                    <div class="text-xs px-2 py-1.5 rounded" style="background:rgba(240,136,62,0.1);border:1px solid rgba(240,136,62,0.3);color:var(--orange)"><i class="ph-bold ph-warning text-xs mr-1"></i>Save this key - it will not be shown again.</div>
+                                    <div class="flex items-center gap-2 px-3 py-2 rounded-lg" style="background:var(--input-bg);border:1px solid var(--border);">
+                                        <code id="agentKeyNewValue" class="text-xs font-mono flex-1 break-all" style="color:var(--text)"></code>
+                                        <button onclick="copyNewAgentKey()" class="btn-icon flex-shrink-0" title="Copy"><i class="ph-bold ph-copy text-sm"></i></button>
+                                    </div>
+                                </div>
+                                <div id="agentKeyCreateErr" class="text-xs" style="display:none;color:var(--red)"></div>
+                                <div class="flex gap-2">
+                                    <button id="agentKeyCreateBtn" onclick="createAgentKey()" class="btn-primary text-xs py-1 px-3">Create</button>
+                                    <button onclick="hideAddKeyForm()" class="btn-secondary text-xs py-1 px-3">Cancel</button>
+                                </div>
+                            </div>
+                            <div id="agentKeysList"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="modal-panel" id="mpanel-agent-keys" style="gap:0;padding:0;overflow:hidden;flex-direction:column;">
+                    <div class="flex items-center justify-between px-4 py-3" style="border-bottom:1px solid var(--border);flex-shrink:0;">
+                        <div>
+                            <div class="font-semibold text-sm" style="color:var(--text)">API Keys</div>
+                            <div class="text-xs mt-0.5" id="agentKeysSubtitle" style="color:var(--muted)"></div>
+                        </div>
+                        <button onclick="showActiveAgentAddKeyForm()" class="btn-secondary text-xs py-1 px-2.5"><i class="ph-bold ph-plus text-xs"></i> Add Key</button>
+                    </div>
+                    <div style="flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:10px;">
+                        <div id="activeAgentKeysAddForm" style="display:none;flex-direction:column;gap:8px;padding:12px;border-radius:8px;border:1px solid var(--blue)" class="mb-1">
+                            <div class="text-xs font-medium" style="color:var(--text)">New API Key</div>
+                            <input id="activeAgentKeyNameInput" type="text" class="input-field text-xs" placeholder="e.g. Mobile App" maxlength="80">
+                            <div id="activeAgentKeyNewDisplay" style="display:none;flex-direction:column;gap:6px;">
+                                <div class="text-xs px-2 py-1.5 rounded" style="background:rgba(240,136,62,0.1);border:1px solid rgba(240,136,62,0.3);color:var(--orange)"><i class="ph-bold ph-warning text-xs mr-1"></i>Save this key - it will not be shown again.</div>
+                                <div class="flex items-center gap-2 px-3 py-2 rounded-lg" style="background:var(--input-bg);border:1px solid var(--border);">
+                                    <code id="activeAgentKeyNewValue" class="text-xs font-mono flex-1 break-all" style="color:var(--text)"></code>
+                                    <button onclick="copyActiveAgentKey()" class="btn-icon flex-shrink-0" title="Copy"><i class="ph-bold ph-copy text-sm"></i></button>
+                                </div>
+                            </div>
+                            <div id="activeAgentKeyCreateErr" class="text-xs" style="display:none;color:var(--red)"></div>
+                            <div class="flex gap-2">
+                                <button id="activeAgentKeyCreateBtn" onclick="createActiveAgentKey()" class="btn-primary text-xs py-1 px-3">Create</button>
+                                <button onclick="hideActiveAgentAddKeyForm()" class="btn-secondary text-xs py-1 px-3">Cancel</button>
+                            </div>
+                        </div>
+                        <div id="activeAgentKeysList"></div>
                     </div>
                 </div>
 
@@ -1440,6 +1518,24 @@ function switchSystemTab(id, btn) {
     if (panel) panel.style.display = 'flex';
 }
 
+function _updateSettingsSidebarForAgent(active) {
+    const localOnly = ['auth', 'connection', 'notifications'];
+    localOnly.forEach(id => {
+        const btn = document.getElementById('msb-' + id);
+        if (btn) btn.style.display = active ? 'none' : '';
+        const mob = document.getElementById('msb-' + id + '-mobile');
+        if (mob) mob.style.display = active ? 'none' : '';
+    });
+    const staticBtn = document.getElementById('msb-static');
+    if (staticBtn && active) staticBtn.style.display = 'none';
+    const staticMob = document.getElementById('msb-static-mobile');
+    if (staticMob && active) staticMob.style.display = 'none';
+    const keysBtn = document.getElementById('msb-agent-keys');
+    if (keysBtn) keysBtn.style.display = active ? '' : 'none';
+    const keysMob = document.getElementById('msb-agent-keys-mobile');
+    if (keysMob) keysMob.style.display = active ? '' : 'none';
+}
+
 function switchSettingsPanel(id, btn) {
     document.querySelectorAll('.modal-sidebar-btn').forEach(b => b.classList.remove('active'));
     document.querySelectorAll('.modal-panel').forEach(p => p.classList.remove('active'));
@@ -1447,7 +1543,7 @@ function switchSettingsPanel(id, btn) {
     if (activeBtn) activeBtn.classList.add('active');
     document.getElementById('mpanel-' + id).classList.add('active');
     if (window.innerWidth < 640) {
-        const titles = {connection:'Connection',routes:'Route Monitoring',system:'System Monitoring',auth:'Authentication',backups:'Backups',static:'Static Config',ui:'Interface',notifications:'Notifications',about:'About'};
+        const titles = {connection:'Connection',routes:'Route Monitoring',system:'System Monitoring',auth:'Authentication',backups:'Backups',static:'Static Config',ui:'Interface',notifications:'Notifications',about:'About','agent-keys':'API Keys'};
         document.getElementById('settingsModalTitle').textContent = titles[id] || 'Settings';
         document.getElementById('settingsGearIcon').style.display = 'none';
         document.getElementById('settingsMobileRoot').style.display = 'none';
@@ -1478,6 +1574,8 @@ async function openSettingsModal(panel) {
 
     document.getElementById('settingsModal').style.display = 'flex';
     document.body.style.overflow = 'hidden';
+    _updateSettingsSidebarForAgent(!!_activeAgent);
+
     if (window.innerWidth < 640 && !panel) {
         document.getElementById('settingsMobileRoot').style.display = 'flex';
         document.getElementById('settingsPanelWrapper').style.display = 'none';
@@ -1513,7 +1611,10 @@ async function openSettingsModal(panel) {
         if (whUser) whUser.value = data.webhook_username || '';
         onWebhookTypeChange();
 
-        if (data.visible_tabs) _visibleTabsCache = data.visible_tabs;
+        if (data.visible_tabs) {
+            _localTabsCache = data.visible_tabs;
+            if (!_activeAgent) _visibleTabsCache = data.visible_tabs;
+        }
         loadTabTogglesIntoModal();
         loadUiTogglesIntoModal();
         _applyTraefikBadgeVisibility();
@@ -2232,6 +2333,9 @@ let _agentCfgViewOnly = false;
 async function loadAgentsList() {
     const body = document.getElementById('agentsListBody');
     if (!body) return;
+    document.getElementById('agentListView').style.display    = 'flex';
+    document.getElementById('agentWizardView').style.display  = 'none';
+    document.getElementById('agentKeysView').style.display    = 'none';
     try {
         const res  = await fetch('/api/agents');
         const data = await res.json();
@@ -2251,7 +2355,8 @@ async function loadAgentsList() {
                     <div class="text-xs mt-0.5 truncate font-mono" style="color:var(--muted)">${_esc(a.url)}</div>
                 </div>
                 <div class="flex items-center gap-1 flex-shrink-0">
-                    <button onclick="openAgentSetup('${a.id}')" class="btn-icon" title="Setup commands"><i class="ph-bold ph-code text-xs"></i></button>
+                    <button onclick="openAgentKeys('${a.id}','${_esc(a.name)}')" class="btn-icon" title="API Keys"><i class="ph-bold ph-key text-xs"></i></button>
+                    <button onclick="openAgentSetup('${a.id}')" class="btn-icon" title="Edit Settings"><i class="ph-bold ph-gear text-xs"></i></button>
                     <button onclick="deleteAgent('${a.id}','${_esc(a.name)}')" class="btn-icon" title="Remove" style="color:var(--red)"><i class="ph-bold ph-trash text-xs"></i></button>
                 </div>
             </div>`).join('');
@@ -2260,6 +2365,193 @@ async function loadAgentsList() {
     } catch(e) {
         body.innerHTML = `<div class="text-center py-6 text-xs" style="color:var(--red)">Failed to load agents</div>`;
     }
+}
+
+let _keysAgentId = null;
+
+function openAgentKeys(agentId, agentName) {
+    _keysAgentId = agentId;
+    document.getElementById('agentKeysTitle').textContent = _esc(agentName) + ' - API Keys';
+    document.getElementById('agentListView').style.display   = 'none';
+    document.getElementById('agentWizardView').style.display = 'none';
+    document.getElementById('agentKeysView').style.display   = 'flex';
+    hideAddKeyForm();
+    loadAgentKeys();
+}
+
+function closeAgentKeys() {
+    document.getElementById('agentKeysView').style.display  = 'none';
+    document.getElementById('agentListView').style.display  = 'flex';
+}
+
+async function loadAgentKeys() {
+    const list = document.getElementById('agentKeysList');
+    if (!list || !_keysAgentId) return;
+    list.innerHTML = '<div class="text-xs" style="color:var(--muted)">Loading...</div>';
+    try {
+        const res  = await fetch('/api/agents/proxy/' + _keysAgentId + '/keys', { headers: _csrfHeaders() });
+        const data = await res.json();
+        const keys = data.keys || [];
+        if (!keys.length) {
+            list.innerHTML = '<div class="text-center py-6 text-xs" style="color:var(--muted)">No API keys yet. Add one to allow external clients like the mobile app to connect to this agent.</div>';
+            return;
+        }
+        list.innerHTML = keys.map(k => `
+            <div class="flex items-center gap-3 px-3 py-2.5 rounded-lg" style="background:var(--bg);border:1px solid var(--border);">
+                <i class="ph-bold ph-key text-xs flex-shrink-0" style="color:var(--muted)"></i>
+                <div style="flex:1;min-width:0;">
+                    <div class="text-xs font-medium" style="color:var(--text)">${_esc(k.name)}</div>
+                    <div class="text-xs" style="color:var(--muted)">Created ${new Date(k.created_at).toLocaleDateString()}${k.last_used_at ? ' &middot; Last used ' + new Date(k.last_used_at).toLocaleDateString() : ''}</div>
+                </div>
+                <button onclick="deleteAgentKey('${_keysAgentId}','${k.id}','${_esc(k.name)}')" class="btn-icon flex-shrink-0" title="Revoke" style="color:var(--red)"><i class="ph-bold ph-trash text-xs"></i></button>
+            </div>`).join('');
+    } catch(e) {
+        list.innerHTML = '<div class="text-xs" style="color:var(--red)">Failed to load keys</div>';
+    }
+}
+
+function showAddKeyForm() {
+    const form = document.getElementById('agentKeysAddForm');
+    if (form) { form.style.display = 'flex'; }
+    document.getElementById('agentKeyNameInput').value = '';
+    document.getElementById('agentKeyNewDisplay').style.display = 'none';
+    document.getElementById('agentKeyCreateErr').style.display  = 'none';
+    document.getElementById('agentKeyCreateBtn').textContent = 'Create';
+    setTimeout(() => document.getElementById('agentKeyNameInput').focus(), 50);
+}
+
+function hideAddKeyForm() {
+    const form = document.getElementById('agentKeysAddForm');
+    if (form) form.style.display = 'none';
+}
+
+async function createAgentKey() {
+    const name = document.getElementById('agentKeyNameInput').value.trim();
+    const errEl = document.getElementById('agentKeyCreateErr');
+    if (!name) { errEl.textContent = 'Enter a name for this key'; errEl.style.display = ''; return; }
+    const btn = document.getElementById('agentKeyCreateBtn');
+    btn.disabled = true; btn.textContent = 'Creating...';
+    errEl.style.display = 'none';
+    try {
+        const res  = await fetch('/api/agents/proxy/' + _keysAgentId + '/keys', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ..._csrfHeaders() },
+            body: JSON.stringify({ name })
+        });
+        const data = await res.json();
+        if (!data.ok) { errEl.textContent = data.error || 'Failed to create key'; errEl.style.display = ''; btn.disabled = false; btn.textContent = 'Create'; return; }
+        document.getElementById('agentKeyNewValue').textContent = data.key;
+        document.getElementById('agentKeyNewDisplay').style.display = 'flex';
+        btn.textContent = 'Done';
+        btn.onclick = () => { hideAddKeyForm(); loadAgentKeys(); btn.onclick = createAgentKey; };
+        btn.disabled = false;
+    } catch(e) {
+        errEl.textContent = 'Request failed'; errEl.style.display = '';
+        btn.disabled = false; btn.textContent = 'Create';
+    }
+}
+
+function copyNewAgentKey() {
+    const val = document.getElementById('agentKeyNewValue').textContent;
+    navigator.clipboard.writeText(val).then(() => showToast('Key copied', 'success')).catch(() => {});
+}
+
+async function deleteAgentKey(agentId, keyId, keyName) {
+    if (!await _confirm(`Revoke key "${keyName}"? Any client using it will lose access immediately.`, 'Revoke Key', 'Revoke')) return;
+    try {
+        const res  = await fetch('/api/agents/proxy/' + agentId + '/keys/' + keyId, { method: 'DELETE', headers: _csrfHeaders() });
+        const data = await res.json();
+        if (data.ok) { showToast('Key revoked', 'success'); loadAgentKeys(); }
+        else showToast('Revoke failed: ' + (data.error || 'Unknown'), 'error');
+    } catch(e) { showToast('Revoke failed', 'error'); }
+}
+
+async function loadActiveAgentKeys() {
+    if (!_activeAgent) return;
+    const sub = document.getElementById('agentKeysSubtitle');
+    if (sub) sub.textContent = _activeAgent.name;
+    hideActiveAgentAddKeyForm();
+    const list = document.getElementById('activeAgentKeysList');
+    if (!list) return;
+    list.innerHTML = '<div class="text-xs" style="color:var(--muted)">Loading...</div>';
+    try {
+        const res  = await fetch('/api/agents/proxy/' + _activeAgent.id + '/keys', { headers: _csrfHeaders() });
+        const data = await res.json();
+        const keys = data.keys || [];
+        if (!keys.length) {
+            list.innerHTML = '<div class="text-center py-6 text-xs" style="color:var(--muted)">No API keys yet.<br>Add one to let external clients like the mobile app connect directly to this agent.</div>';
+            return;
+        }
+        list.innerHTML = keys.map(k => `
+            <div class="flex items-center gap-3 px-3 py-2.5 rounded-lg" style="background:var(--bg);border:1px solid var(--border);">
+                <i class="ph-bold ph-key text-xs flex-shrink-0" style="color:var(--muted)"></i>
+                <div style="flex:1;min-width:0;">
+                    <div class="text-xs font-medium" style="color:var(--text)">${_esc(k.name)}</div>
+                    <div class="text-xs" style="color:var(--muted)">Created ${new Date(k.created_at).toLocaleDateString()}${k.last_used_at ? ' &middot; Last used ' + new Date(k.last_used_at).toLocaleDateString() : ''}</div>
+                </div>
+                <button onclick="deleteActiveAgentKey('${k.id}','${_esc(k.name)}')" class="btn-icon flex-shrink-0" title="Revoke" style="color:var(--red)"><i class="ph-bold ph-trash text-xs"></i></button>
+            </div>`).join('');
+    } catch(e) {
+        list.innerHTML = '<div class="text-xs" style="color:var(--red)">Failed to load keys</div>';
+    }
+}
+
+function showActiveAgentAddKeyForm() {
+    const form = document.getElementById('activeAgentKeysAddForm');
+    if (form) form.style.display = 'flex';
+    document.getElementById('activeAgentKeyNameInput').value = '';
+    document.getElementById('activeAgentKeyNewDisplay').style.display = 'none';
+    document.getElementById('activeAgentKeyCreateErr').style.display  = 'none';
+    const btn = document.getElementById('activeAgentKeyCreateBtn');
+    btn.textContent = 'Create'; btn.onclick = createActiveAgentKey;
+    setTimeout(() => document.getElementById('activeAgentKeyNameInput').focus(), 50);
+}
+
+function hideActiveAgentAddKeyForm() {
+    const form = document.getElementById('activeAgentKeysAddForm');
+    if (form) form.style.display = 'none';
+}
+
+async function createActiveAgentKey() {
+    if (!_activeAgent) return;
+    const name = document.getElementById('activeAgentKeyNameInput').value.trim();
+    const errEl = document.getElementById('activeAgentKeyCreateErr');
+    if (!name) { errEl.textContent = 'Enter a name for this key'; errEl.style.display = ''; return; }
+    const btn = document.getElementById('activeAgentKeyCreateBtn');
+    btn.disabled = true; btn.textContent = 'Creating...';
+    errEl.style.display = 'none';
+    try {
+        const res  = await fetch('/api/agents/proxy/' + _activeAgent.id + '/keys', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ..._csrfHeaders() },
+            body: JSON.stringify({ name })
+        });
+        const data = await res.json();
+        if (!data.ok) { errEl.textContent = data.error || 'Failed'; errEl.style.display = ''; btn.disabled = false; btn.textContent = 'Create'; return; }
+        document.getElementById('activeAgentKeyNewValue').textContent = data.key;
+        document.getElementById('activeAgentKeyNewDisplay').style.display = 'flex';
+        btn.textContent = 'Done'; btn.disabled = false;
+        btn.onclick = () => { hideActiveAgentAddKeyForm(); loadActiveAgentKeys(); btn.onclick = createActiveAgentKey; };
+    } catch(e) {
+        errEl.textContent = 'Request failed'; errEl.style.display = '';
+        btn.disabled = false; btn.textContent = 'Create';
+    }
+}
+
+function copyActiveAgentKey() {
+    const val = document.getElementById('activeAgentKeyNewValue').textContent;
+    navigator.clipboard.writeText(val).then(() => showToast('Key copied', 'success')).catch(() => {});
+}
+
+async function deleteActiveAgentKey(keyId, keyName) {
+    if (!_activeAgent) return;
+    if (!await _confirm(`Revoke key "${keyName}"? Any client using it will lose access immediately.`, 'Revoke Key', 'Revoke')) return;
+    try {
+        const res  = await fetch('/api/agents/proxy/' + _activeAgent.id + '/keys/' + keyId, { method: 'DELETE', headers: _csrfHeaders() });
+        const data = await res.json();
+        if (data.ok) { showToast('Key revoked', 'success'); loadActiveAgentKeys(); }
+        else showToast('Revoke failed: ' + (data.error || 'Unknown'), 'error');
+    } catch(e) { showToast('Revoke failed', 'error'); }
 }
 
 async function pingAgent(id, url) {
@@ -2296,13 +2588,13 @@ function startAddAgent() {
     showAgentWizStep(1);
 }
 
-async function openAgentSetup(id) {
+async function openAgentSetup(id, titleOverride) {
     _agentCfgViewOnly = true;
     _agentWizId = id;
     _agentWizKey = null;
     document.getElementById('agentListView').style.display   = 'none';
     document.getElementById('agentWizardView').style.display = 'flex';
-    document.getElementById('agentWizardTitle').textContent  = 'Setup Commands';
+    document.getElementById('agentWizardTitle').textContent  = titleOverride || 'Setup Commands';
     document.getElementById('agentWizardStepPills').style.display = 'none';
     document.getElementById('agentRotateKeyBanner').style.display = '';
     document.getElementById('agentRotatedKeyDisplay').style.display = 'none';
@@ -2342,6 +2634,9 @@ async function openAgentSetup(id) {
                 if (a.git_backup_username) document.getElementById('agCfgGitUser').value  = a.git_backup_username;
                 document.getElementById('agCfgGitAutoPush').checked = a.git_backup_auto_push !== false;
             }
+            if (a.tma_port)       { const el = document.getElementById('agCfgPort');      if (el) el.value = a.tma_port; }
+            if (a.tma_rate_limit) { const el = document.getElementById('agCfgRateLimit'); if (el) el.value = a.tma_rate_limit; }
+            if (a.domains && a.domains.length) { const el = document.getElementById('agCfgDomains'); if (el) el.value = a.domains.join(', '); }
         }
     } catch(e) {}
     agentCfgChanged();
@@ -2379,6 +2674,9 @@ function resetAgentWizardCfgFields() {
     document.getElementById('agCfgGitToken').value    = '';
     document.getElementById('agCfgGitAutoPush').checked = true;
     document.getElementById('agCfgCsUrl').value       = '';
+    const portEl = document.getElementById('agCfgPort'); if (portEl) portEl.value = '';
+    const rlEl   = document.getElementById('agCfgRateLimit'); if (rlEl) rlEl.value = '';
+    const domsEl = document.getElementById('agCfgDomains'); if (domsEl) domsEl.value = '';
     document.getElementById('agCfgCsKey').value       = '';
     document.getElementById('agCfgInsecureTLS')?.classList.remove('on');
     selectRestartMethod('', document.querySelector('#restartMethodChips .agent-chip'));
@@ -2527,6 +2825,9 @@ function buildAgentCfgPayload() {
         git_backup_username:document.getElementById('agCfgGitUser').value.trim(),
         git_backup_token:   document.getElementById('agCfgGitToken').value,
         git_backup_auto_push: document.getElementById('agCfgGitAutoPush').checked,
+        tma_port:        (document.getElementById('agCfgPort')?.value.trim()) || '',
+        tma_rate_limit:  (document.getElementById('agCfgRateLimit')?.value.trim()) || '',
+        domains:         (document.getElementById('agCfgDomains')?.value || '').split(',').map(s => s.trim()).filter(Boolean),
     };
 }
 
@@ -2553,7 +2854,11 @@ function agentCfgChanged() {
     const gitAuto   = document.getElementById('agCfgGitAutoPush').checked;
 
     const insecureTLS = document.getElementById('agCfgInsecureTLS')?.classList.contains('on');
+    const agentPort   = document.getElementById('agCfgPort')?.value.trim() || '8090';
+    const rateLimit   = document.getElementById('agCfgRateLimit')?.value.trim();
     const envLines = [`      - TMA_API_KEY=${key}`, `      - TRAEFIK_API_URL=${traefik}`, `      - CONFIG_PATH=${configPath}`];
+    if (agentPort !== '8090') envLines.push(`      - TMA_PORT=${agentPort}`);
+    if (rateLimit && rateLimit !== '300') envLines.push(`      - TMA_RATE_LIMIT=${rateLimit}`);
     if (insecureTLS) envLines.push(`      - TRAEFIK_INSECURE_SKIP_VERIFY=true`);
     if (staticPath)  envLines.push(`      - STATIC_CONFIG_PATH=${staticPath}`);
     if (restart)     envLines.push(`      - RESTART_METHOD=${restart}`);
@@ -2563,7 +2868,7 @@ function agentCfgChanged() {
     if (acmePath)    envLines.push(`      - ACME_JSON_PATH=${acmePath}`);
     if (logPath)     envLines.push(`      - ACCESS_LOG_PATH=${logPath}`);
     if (pluginsDir)  envLines.push(`      - PLUGINS_DIR=${pluginsDir}`);
-    if (backupDir)   envLines.push(`      - BACKUP_DIR=/app/backups`);
+    if (backupDir)   envLines.push(`      - BACKUP_DIR=${backupDir}`);
     if (csUrl)       envLines.push(`      - CROWDSEC_LAPI_URL=${csUrl}`);
     if (csKey)       envLines.push(`      - CROWDSEC_API_KEY=${csKey}`);
     if (gitOn) {
@@ -2584,10 +2889,10 @@ function agentCfgChanged() {
     if (restart === 'socket') volLines.push(`      - /var/run/docker.sock:/var/run/docker.sock:ro`);
     if (restart === 'poison-pill') volLines.push(`      - traefik-signals:/signals`);
 
-    let compose = `services:\n  traefik-manager-agent:\n    image: ghcr.io/chr0nzz/traefik-manager-agent:latest\n    restart: unless-stopped\n    ports:\n      - "8090:8090"\n    environment:\n${envLines.join('\n')}\n    volumes:\n${volLines.join('\n')}`;
+    let compose = `services:\n  traefik-manager-agent:\n    image: ghcr.io/chr0nzz/traefik-manager-agent:latest\n    restart: unless-stopped\n    ports:\n      - "${agentPort}:${agentPort}"\n    environment:\n${envLines.join('\n')}\n    volumes:\n${volLines.join('\n')}`;
     if (restart === 'poison-pill') compose += `\n\nvolumes:\n  traefik-signals:`;
 
-    const runParts = [`docker run -d \\`, `  --name traefik-manager-agent \\`, `  -p 8090:8090 \\`];
+    const runParts = [`docker run -d \\`, `  --name traefik-manager-agent \\`, `  -p ${agentPort}:${agentPort} \\`];
     envLines.forEach(e => runParts.push(`  -e ${e.replace(/^\s+- /, '')} \\`));
     volLines.forEach(v => runParts.push(`  -v ${v.replace(/^\s+- /, '')} \\`));
     runParts.push(`  ghcr.io/chr0nzz/traefik-manager-agent:latest`);

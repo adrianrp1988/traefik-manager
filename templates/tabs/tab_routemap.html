@@ -113,8 +113,11 @@ async function rmSaveConfig() {
 window.rmEnsureData = async function() {
     if (_rmDataLoaded) return;
     try {
+        const routeUrl = _activeAgent
+            ? '/api/agents/' + _activeAgent.id + '/routes'
+            : '/api/routes/all';
         const [routeRes, epRes, cfgRes] = await Promise.all([
-            fetch('/api/routes/all'),
+            fetch(routeUrl, { headers: { 'X-Requested-With': 'fetch' } }),
             agentFetch('/api/traefik/entrypoints'),
             fetch('/api/dashboard/config')
         ]);
@@ -139,6 +142,7 @@ window.rmEnsureData = async function() {
 
 window.rmInvalidateData = function() {
     _rmDataLoaded = false;
+    _rmDrawn = false;
     if (typeof window.rmInvalidateDashboard === 'function') window.rmInvalidateDashboard();
 };
 

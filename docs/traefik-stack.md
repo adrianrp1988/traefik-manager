@@ -281,30 +281,98 @@ Installs the [TMA agent](agent.md) on a remote server so a central Traefik Manag
 
 ### Install methods
 
-After choosing **Traefik Manager Agent**, the script asks which install method to use:
+After choosing **Traefik Manager Agent**, the script shows an arrow-key menu:
 
 ```
 Install method
-  1) Docker - Agent only (agent alongside existing Traefik)
-  2) Docker - Agent + Traefik (deploy both together)
-  3) Binary - Agent only (systemd service, no Docker)
+▸ Docker - Agent only (alongside existing Traefik)
+  Docker - Agent + Traefik (deploy both together)
+  Binary - Agent only (systemd service, no Docker)
 ```
+
+Use `↑`/`↓` to move, `Enter` to select, or type a number.
+
+### Sections and review screen
+
+After answering each section the script shows a review table:
+
+```
+  Review configuration
+  ────────────────────────────────────────────────────────
+   1  Install method     Agent only
+   2  API key            sk-••••••••
+   3  Traefik connection http://traefik:8080
+   4  Optional paths     logs
+   5  Restart method     none
+   6  CrowdSec           disabled
+   7  Git backup         disabled
+   8  Install location   /opt/traefik-manager-agent  :8090
+  ────────────────────────────────────────────────────────
+
+  Edit a section (1-8) or Enter to install:
+```
+
+Type a section number to re-configure it, then press Enter to return to the review. Press Enter with no number to begin the install.
 
 ### What the script asks
 
-1. **API key** - generate this in your TM Settings - Agents before running the script
-2. **Traefik API URL** - where the agent can reach Traefik (default: `http://traefik:8080`)
-3. **Dynamic config path** - where Traefik reads config files (default: `/app/config`)
-4. **Static config path** - optional, enables static config editing
-5. **Optional paths** - ACME/certs, access log, plugins dir
-6. **Restart method** - how the agent should restart Traefik after static config changes
-7. **CrowdSec** - optional, connect to a local CrowdSec instance
-8. **Git backup** - optional, autonomous git backup for this server's configs
-9. **Install directory and port**
+**Traefik connection (section 3)**
+- Traefik API URL (default: `http://traefik:8080`)
+- Dynamic config path (default: `/app/config`)
+- Skip TLS verification - shown only when the URL starts with `https://`; enables `TRAEFIK_INSECURE_SKIP_VERIFY` for self-signed or Cloudflare Origin certs
+- Mount static config (`traefik.yml`) - toggle; if enabled, asks for the path
 
-### Docker output
+**Traefik install (Docker - Agent + Traefik only)**
+- Enable HTTPS on port 443
+- TLS certificate method: Let's Encrypt HTTP challenge, Let's Encrypt Cloudflare DNS, or no TLS
+- ACME email (if Let's Encrypt)
+- Cloudflare DNS API token (if Cloudflare DNS)
+- Cert resolver name (default: `letsencrypt`)
+- Enable Traefik dashboard and hostname
+- Docker network name (default: `traefik-net`)
 
-The script generates a `docker-compose.yml` with only the env vars and volume mounts needed for the options you enabled, then runs `docker compose up -d`.
+**Optional paths (section 4)**
+- Mount ACME / certs (`acme.json`) - toggle + path
+- Mount access logs - toggle + path
+- Mount plugins directory - toggle + path
+
+**Restart method (section 5)**
+- None, socket proxy, poison pill, or direct Docker socket
+
+**CrowdSec (section 6)**
+
+| Option | What it does |
+|---|---|
+| None | Skip CrowdSec |
+| Install alongside agent | Adds a `crowdsec` service to the compose, generates a random bouncer key, writes `crowdsec/acquis.yaml`. Requires access log mount (prompts if not set). Available for Docker installs only. |
+| Connect to existing | Enter LAPI URL and API key. |
+
+**Git backup (section 7)** - repo URL, branch, username, token, auto-push toggle
+
+**Install location (section 8, Docker only)** - install directory and agent port (default: `8090`)
+
+### Docker - Agent only output
+
+Generates `docker-compose.yml` with only the env vars and volumes for the options you enabled, then runs `docker compose up -d`. If CrowdSec install was chosen, adds a `crowdsec` service and writes `crowdsec/acquis.yaml`.
+
+### Docker - Agent + Traefik output
+
+Creates the following directory structure and starts both containers:
+
+```
+/opt/traefik-manager-agent/
+  docker-compose.yml           (traefik + traefik-manager-agent services)
+  traefik/
+    traefik.yml                (static config - entrypoints, file provider, cert resolver)
+    acme.json                  (created empty, chmod 600 - if TLS enabled)
+    config/                    (dynamic config dir, shared between Traefik and agent)
+    logs/
+      access.log
+  crowdsec/                    (only if CrowdSec install chosen)
+    acquis.yaml
+```
+
+Traefik's API port (8080) is not exposed externally - the agent reaches it via the internal Docker network (`http://traefik:8080`).
 
 ### Binary output
 

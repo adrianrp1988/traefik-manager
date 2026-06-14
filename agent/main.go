@@ -42,6 +42,7 @@ type App struct {
 	cfg        *Config
 	rl         *perIPLimiter
 	httpClient *http.Client
+	keys       *keyStore
 }
 
 func envOr(key, def string) string {
@@ -75,7 +76,7 @@ func loadConfig() *Config {
 	return &Config{
 		APIKey:                    os.Getenv("TMA_API_KEY"),
 		Port:                      envOr("TMA_PORT", "8090"),
-		RateLimit:                 envInt("TMA_RATE_LIMIT", 10),
+		RateLimit:                 envInt("TMA_RATE_LIMIT", 300),
 		TraefikAPIURL:             envOr("TRAEFIK_API_URL", "http://traefik:8080"),
 		TraefikInsecureSkipVerify: envBool("TRAEFIK_INSECURE_SKIP_VERIFY", false),
 		ConfigPath:         envOr("CONFIG_PATH", "/app/config"),
@@ -113,6 +114,7 @@ func main() {
 		cfg:        cfg,
 		rl:         newPerIPLimiter(cfg.RateLimit),
 		httpClient: &http.Client{Transport: transport},
+		keys:       newKeyStore(cfg.BackupDir),
 	}
 
 	mux := http.NewServeMux()
@@ -137,7 +139,7 @@ func (a *App) router(w http.ResponseWriter, r *http.Request) {
 	case p == "/api/traefik/services" && m == http.MethodGet:
 		a.servicesHandler(w, r)
 	case p == "/api/traefik/middlewares" && m == http.MethodGet:
-		a.traefikProxy(w, r, "/api/http/middlewares")
+		a.middlewaresHandler(w, r)
 	case p == "/api/traefik/entrypoints" && m == http.MethodGet:
 		a.traefikProxy(w, r, "/api/entrypoints")
 	case p == "/api/traefik/version" && m == http.MethodGet:
@@ -190,6 +192,13 @@ func (a *App) router(w http.ResponseWriter, r *http.Request) {
 		a.gitRestoreHandler(w, r, sha)
 	case p == "/api/backup/git/repo" && m == http.MethodDelete:
 		a.gitResetHandler(w, r)
+
+	case p == "/api/keys" && m == http.MethodGet:
+		a.keysListHandler(w, r)
+	case p == "/api/keys" && m == http.MethodPost:
+		a.keysCreateHandler(w, r)
+	case strings.HasPrefix(p, "/api/keys/") && m == http.MethodDelete:
+		a.keysDeleteHandler(w, r, strings.TrimPrefix(p, "/api/keys/"))
 
 	default:
 		jsonError(w, "not found", http.StatusNotFound)

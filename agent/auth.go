@@ -16,7 +16,8 @@ func (a *App) authMiddleware(next http.Handler) http.Handler {
 		if key == "" {
 			key = strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 		}
-		if subtle.ConstantTimeCompare([]byte(key), []byte(a.cfg.APIKey)) != 1 {
+		envKeyMatch := subtle.ConstantTimeCompare([]byte(key), []byte(a.cfg.APIKey)) == 1
+		if !envKeyMatch && !a.keys.validate(key) {
 			jsonError(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}

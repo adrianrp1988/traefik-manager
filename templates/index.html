@@ -460,6 +460,16 @@ function _updateServerSwitcherList(agents) {
 function switchServer(agentId) {
     const agent = agentId ? (_agentRegistry[agentId] || null) : null;
     _activeAgent = agent;
+    _cachedEntrypoints = null;
+    _cachedMiddlewares = null;
+    if (agent) document.getElementById('selfRouteEpWarning')?.remove();
+    if (typeof window.rmInvalidateData === 'function') window.rmInvalidateData();
+    if (agent) {
+        const stored = JSON.parse(localStorage.getItem('tm_tabs_agent_' + agent.id) || '{}');
+        applyTabVisibility(stored);
+    } else {
+        applyTabVisibility(_localTabsCache);
+    }
     const label = document.getElementById('serverSwitcherLabel');
     if (label) label.textContent = agent ? agent.name : 'Local';
     document.getElementById('serverSwitcherMenu')?.classList.remove('open');
@@ -570,6 +580,7 @@ async function _fixSelfRouteEp(fixEp) {
 const OPTIONAL_TABS = ['dashboard', 'routemap', 'docker', 'kubernetes', 'swarm', 'nomad', 'ecs', 'consulcatalog', 'redis', 'etcd', 'consul', 'zookeeper', 'http_provider', 'file_external', 'certs', 'tls', 'crowdsec', 'plugins', 'logs'];
 
 let _visibleTabsCache = {};
+let _localTabsCache   = {};
 
 function applyTabVisibility(map) {
     if (map) _visibleTabsCache = map;
@@ -594,7 +605,7 @@ function loadTabTogglesIntoModal() {
 
 async function toggleTabVisibility(tab) {
     const newVal = !_visibleTabsCache[tab];
-    
+
     _visibleTabsCache[tab] = newVal;
     const sw  = document.getElementById('toggle-' + tab);
     const btn = document.getElementById('btn-' + tab);
@@ -603,15 +614,23 @@ async function toggleTabVisibility(tab) {
         btn.style.display = newVal ? 'block' : 'none';
         if (!newVal && btn.classList.contains('active')) switchTab('services');
     }
-    
-    try {
-        await fetch('/api/settings/tabs', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': _csrfHeaders()['X-CSRF-Token'] },
-            body: JSON.stringify({ [tab]: newVal })
-        });
-    } catch(e) {
-        console.error('Failed to save tab visibility', e);
+
+    if (_activeAgent) {
+        const key = 'tm_tabs_agent_' + _activeAgent.id;
+        const stored = JSON.parse(localStorage.getItem(key) || '{}');
+        stored[tab] = newVal;
+        localStorage.setItem(key, JSON.stringify(stored));
+    } else {
+        _localTabsCache[tab] = newVal;
+        try {
+            await fetch('/api/settings/tabs', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': _csrfHeaders()['X-CSRF-Token'] },
+                body: JSON.stringify({ [tab]: newVal })
+            });
+        } catch(e) {
+            console.error('Failed to save tab visibility', e);
+        }
     }
 }
 
@@ -850,7 +869,6 @@ function openModal() {
         if (el) el.value = '';
     });
     setHttpRuleMode('simple');
-    _initDomainChips([]);
     _initEntrypointChips('http', []);
     _initEntrypointChips('tcp', []);
     _initEntrypointChips('udp', []);
@@ -864,17 +882,15 @@ function openModal() {
     const mainEl = document.getElementById('tlsWildcardMain'); if (mainEl) mainEl.value = '';
     const sansEl = document.getElementById('tlsWildcardSans'); if (sansEl) sansEl.value = '';
     setProtocol('http');
-    // Init config file to first option (multi-config mode)
-    const cfSel = document.getElementById('configFileSelect');
-    const cfHid = document.getElementById('configFile');
-    if (cfSel) cfSel.value = cfSel.options[0]?.value || '';
-    const newRouteInput = document.getElementById('newRouteFileName');
-    if (newRouteInput) { newRouteInput.style.display = 'none'; newRouteInput.value = ''; }
-    if (cfSel && cfHid && cfSel.value !== '__new__') cfHid.value = cfSel.value;
     const tlsOptSel = document.getElementById('tlsOptionsProfileSelect');
     if (tlsOptSel) tlsOptSel.value = '';
     _populateTlsOptionsSelect();
-    document.getElementById('appModal').style.display = 'flex';
+    _updateRouteModalForAgent();
+    const _omAgDoms = _activeAgent ? (_activeAgent.domains || []) : [];
+    if (_activeAgent && _omAgDoms.length > 1) { _initAgentDomainChips(_omAgDoms, []); } else { _initDomainChips([]); }
+    _populateConfigFileSelect('route').then(() => {
+        document.getElementById('appModal').style.display = 'flex';
+    });
 }
 
 function closeModal() { document.getElementById('appModal').style.display = 'none'; }
@@ -892,11 +908,9 @@ function openMwModal() {
     if (titleEl) titleEl.innerText = 'Add Middleware';
     const mwCfSel = document.getElementById('mwConfigFileSelect');
     const mwCfHid = document.getElementById('mwConfigFile');
-    if (mwCfSel) mwCfSel.value = mwCfSel.options[0]?.value || '';
     const newMwInput = document.getElementById('newMwFileName');
     if (newMwInput) { newMwInput.style.display = 'none'; newMwInput.value = ''; }
-    if (mwCfSel && mwCfHid && mwCfSel.value !== '__new__') mwCfHid.value = mwCfSel.value;
-    modal.style.display = 'flex';
+    _populateConfigFileSelect('mw').then(() => { modal.style.display = 'flex'; });
     const mwTplSel = document.getElementById('mwTemplate');
     if (mwTplSel) mwTplSel.value = '';
     setMwMode('yaml');
@@ -1157,6 +1171,89 @@ function buildYamlFromWizard() {
     if (yaml) {
         document.getElementById('middlewareContent').value = yaml;
         if (_mwMonacoEditor) _mwMonacoEditor.setValue(yaml);
+    }
+}
+
+function _updateRouteModalForAgent(rebuildBody) {
+    const domainCol  = document.getElementById('routeDomainCol');
+    const domLabel   = document.getElementById('agentDomainLabel');
+    const domBody    = document.getElementById('routeDomainBody');
+    const subLabel   = document.getElementById('routeSubdomainLabel');
+    const subInput   = document.getElementById('subdomain');
+    const agentDomains = _activeAgent ? (_activeAgent.domains || []) : [];
+    if (_activeAgent && agentDomains.length === 0) {
+        if (domainCol) domainCol.style.display = 'none';
+        if (subLabel) subLabel.textContent = 'Hostname';
+        if (subInput) subInput.placeholder = 'app.example.com';
+    } else if (_activeAgent && agentDomains.length > 0) {
+        if (domainCol) domainCol.style.display = '';
+        if (subLabel) subLabel.textContent = 'Subdomain';
+        if (subInput) subInput.placeholder = 'app';
+        if (domLabel) domLabel.textContent = agentDomains.length > 1 ? 'Domains' : 'Domain';
+        if (rebuildBody !== false && domBody) {
+            if (agentDomains.length > 1) {
+                domBody.innerHTML = `<div id="domainChips" class="flex flex-wrap gap-1.5 p-2 rounded-lg" style="background:var(--input-bg);border:1px solid var(--border);min-height:38px"></div><div id="domainHiddenInputs"></div>`;
+            } else {
+                domBody.innerHTML = `<select name="domains" id="domainSelect" class="input-field"><option value="${_esc(agentDomains[0])}">${_esc(agentDomains[0])}</option></select>`;
+            }
+        }
+    } else {
+        if (domainCol) domainCol.style.display = '';
+        if (subLabel) subLabel.textContent = 'Subdomain';
+        if (subInput) subInput.placeholder = 'app';
+        if (domLabel) domLabel.textContent = availableDomains.length > 1 ? 'Domains' : 'Domain';
+        if (rebuildBody !== false && domBody) {
+            if (availableDomains.length > 1) {
+                if (!document.getElementById('domainChips')) {
+                    domBody.innerHTML = `<div id="domainChips" class="flex flex-wrap gap-1.5 p-2 rounded-lg" style="background:var(--input-bg);border:1px solid var(--border);min-height:38px"></div><div id="domainHiddenInputs"></div>`;
+                }
+            } else if (availableDomains.length === 1) {
+                if (!document.getElementById('domainSelect')) {
+                    domBody.innerHTML = `<select name="domains" id="domainSelect" class="input-field"><option value="${_esc(availableDomains[0])}">${_esc(availableDomains[0])}</option></select>`;
+                }
+            } else {
+                domBody.innerHTML = '';
+            }
+        }
+    }
+}
+
+function _buildConfigSelectOptions(sel, files, allowNew) {
+    sel.innerHTML = '<option value="">Select a file...</option>';
+    if (allowNew) {
+        const o = document.createElement('option'); o.value = '__new__'; o.textContent = '+ New file...'; sel.appendChild(o);
+    }
+    files.forEach(f => { const o = document.createElement('option'); o.value = f; o.textContent = f; sel.appendChild(o); });
+}
+
+async function _populateConfigFileSelect(which) {
+    const isRoute = which === 'route';
+    const wrapId     = isRoute ? 'configFileSelectWrap' : 'mwConfigFileSelectWrap';
+    const selId      = isRoute ? 'configFileSelect' : 'mwConfigFileSelect';
+    const newInputId = isRoute ? 'newRouteFileName' : 'newMwFileName';
+    const hidId      = isRoute ? 'configFile' : 'mwConfigFile';
+    const wrap    = document.getElementById(wrapId);
+    const sel     = document.getElementById(selId);
+    const newInput = document.getElementById(newInputId);
+    const hidEl   = document.getElementById(hidId);
+    if (!sel) return;
+    if (newInput) { newInput.style.display = 'none'; newInput.value = ''; }
+    if (_activeAgent) {
+        if (wrap) wrap.style.display = '';
+        try {
+            const r = await agentFetch('/api/configs');
+            const data = await r.json();
+            const files = (data.files || []).map(f => f.name).sort();
+            _buildConfigSelectOptions(sel, files, true);
+            if (files.length === 1) { sel.value = files[0]; if (hidEl) hidEl.value = files[0]; }
+            else { sel.value = ''; if (hidEl) hidEl.value = ''; }
+        } catch(e) { console.error('Failed to load agent configs', e); }
+    } else {
+        const show = MULTI_CONFIG || CONFIG_DIR_SET;
+        if (wrap) wrap.style.display = show ? '' : 'none';
+        _buildConfigSelectOptions(sel, CONFIG_PATHS_LIST.map(cp => cp.label), CONFIG_DIR_SET);
+        if (sel.options.length > 1) sel.value = sel.options[1].value;
+        if (hidEl) hidEl.value = sel.value && sel.value !== '__new__' ? sel.value : '';
     }
 }
 
@@ -1499,6 +1596,7 @@ async function deleteSelfRoute() {
 
 function renderRouteGrid(apps) {
     window._lastRenderedApps = apps;
+    if (_activeAgent) apps = apps.filter(a => !a.provider || a.provider === 'file');
     const grid = document.getElementById('routeGrid');
     if (!grid) return;
     const emptyEl = document.getElementById('routeEmpty');
@@ -1598,6 +1696,8 @@ function renderMwGrid(middlewares) {
         grid.className = 'grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4';
     }
     _mwCardEls = Array.from(grid.querySelectorAll('.mw-card'));
+    const _mwCountEl = document.getElementById('countMw');
+    if (_mwCountEl) _mwCountEl.textContent = middlewares.length;
     filterMw();
 }
 
@@ -1653,6 +1753,23 @@ function _toggleDomainChip(btn, domain) {
     window._domainChipRender();
 }
 
+function _initAgentDomainChips(domains, selectedDomains) {
+    const container = document.getElementById('domainChips');
+    const hiddenContainer = document.getElementById('domainHiddenInputs');
+    if (!container || !hiddenContainer) return;
+    let selected = new Set(selectedDomains && selectedDomains.length ? selectedDomains : (domains.length === 1 ? [domains[0]] : []));
+    function render() {
+        hiddenContainer.innerHTML = [...selected].map(d => `<input type="hidden" name="domains" value="${_esc(d)}">`).join('');
+        container.innerHTML = domains.map(d => {
+            const on = selected.has(d);
+            return `<button type="button" onclick="_toggleDomainChip(this,'${_esc(d)}')" style="padding:3px 10px;border-radius:9999px;border:1px solid ${on ? 'var(--blue)' : 'var(--border)'};background:${on ? 'rgba(59,130,246,0.15)' : 'transparent'};color:${on ? 'var(--blue)' : 'var(--muted)'};font-size:12px;font-family:monospace;cursor:pointer;white-space:nowrap;max-width:200px;overflow:hidden;text-overflow:ellipsis" title="${_esc(d)}">${_esc(d)}</button>`;
+        }).join('');
+    }
+    render();
+    window._domainChipSelected = selected;
+    window._domainChipRender = render;
+}
+
 async function _initEntrypointChips(proto, selectedEntrypoints) {
     const containerId = proto === 'http' ? 'httpEntrypointChips' : proto === 'tcp' ? 'tcpEntrypointChips' : 'udpEntrypointChips';
     const hiddenId    = proto === 'http' ? 'entryPoints' : proto === 'tcp' ? 'entryPointsTcp' : 'entryPointsUdp';
@@ -1662,7 +1779,7 @@ async function _initEntrypointChips(proto, selectedEntrypoints) {
 
     if (!_cachedEntrypoints) {
         try {
-            const res = await fetch('/api/traefik/entrypoints');
+            const res = await agentFetch('/api/traefik/entrypoints');
             _cachedEntrypoints = res.ok ? (await res.json()) : [];
         } catch(e) { _cachedEntrypoints = []; }
     }
@@ -1719,9 +1836,9 @@ async function _initMiddlewareChips(selectedMiddlewares) {
 
     if (!_cachedMiddlewares) {
         try {
-            const res = await fetch('/api/traefik/middlewares');
+            const res = await agentFetch('/api/traefik/middlewares');
             const data = res.ok ? (await res.json()) : {};
-            _cachedMiddlewares = (data.http || []).map(m => m.name || m).filter(Boolean);
+            _cachedMiddlewares = (data.http || []).map(m => m.name || m).filter(m => m && (!m.includes('@') || m.endsWith('@file')));
         } catch(e) { _cachedMiddlewares = []; }
     }
     const mws = _cachedMiddlewares;
@@ -1763,6 +1880,7 @@ function _toggleMwChip(mw) {
 }
 
 const MULTI_CONFIG = {{ multi_config | tojson }};
+const CONFIG_DIR_SET = {{ config_dir_set | tojson }};
 const CONFIG_PATHS_LIST = {{ config_paths_list | tojson | safe }};
 
 function setTcpTlsMode(mode, btn) {
@@ -1914,8 +2032,6 @@ async function handleEdit(btn) {
     document.getElementById('modalTitle').innerText = 'Edit ' + app.name;
     document.getElementById('serviceName').value = app.name;
     document.getElementById('configFile').value = app.configFile || '';
-    const cfSel = document.getElementById('configFileSelect');
-    if (cfSel && app.configFile) cfSel.value = app.configFile;
     const newRouteInput = document.getElementById('newRouteFileName');
     if (newRouteInput) { newRouteInput.style.display = 'none'; newRouteInput.value = ''; }
 
@@ -1931,19 +2047,24 @@ async function handleEdit(btn) {
         } else {
             setHttpRuleMode('simple');
         }
+        _updateRouteModalForAgent();
+        const _heAgDoms = _activeAgent ? (_activeAgent.domains || []) : [];
+        const domainsForMatch = (_activeAgent && _heAgDoms.length > 0) ? _heAgDoms : availableDomains;
         let subdomain = '';
         const hostMatches = [...rule.matchAll(/Host\(`([^`]+)`\)/g)].map(m => m[1]);
         const matchedDomains = [];
         for (let fullHost of hostMatches) {
             let found = false;
-            for (let d of availableDomains) {
+            for (let d of domainsForMatch) {
                 if (fullHost.endsWith('.' + d)) { if (!subdomain) subdomain = fullHost.slice(0, -(d.length + 1)); matchedDomains.push(d); found = true; break; }
                 else if (fullHost === d) { matchedDomains.push(d); found = true; break; }
             }
             if (!found && !subdomain) subdomain = fullHost;
         }
         document.getElementById('subdomain').value = subdomain;
-        if (document.getElementById('domainChips')) {
+        if (_activeAgent && _heAgDoms.length > 1 && document.getElementById('domainChips')) {
+            _initAgentDomainChips(_heAgDoms, matchedDomains.length ? matchedDomains : []);
+        } else if (document.getElementById('domainChips')) {
             _initDomainChips(matchedDomains.length ? matchedDomains : (availableDomains.length === 1 ? [availableDomains[0]] : []));
         } else {
             const sel = document.getElementById('domainSelect');
@@ -2004,24 +2125,28 @@ async function handleEdit(btn) {
         _initEntrypointChips('udp', app.entryPoints || []);
     }
 
+    await _populateConfigFileSelect('route');
+    const cfSel = document.getElementById('configFileSelect');
+    if (cfSel && app.configFile) cfSel.value = app.configFile;
     document.getElementById('appModal').style.display = 'flex';
 }
 
-function handleMwEdit(btn) {
+async function handleMwEdit(btn) {
     const mw = JSON.parse(btn.getAttribute('data-mw'));
     document.getElementById('isMwEdit').value = 'true';
     document.getElementById('originalMwId').value = mw.name;
     document.getElementById('middlewareName').value = mw.name;
     document.getElementById('mwModalTitle').innerText = 'Edit ' + mw.name;
     document.getElementById('mwConfigFile').value = mw.configFile || '';
-    const cfSel = document.getElementById('mwConfigFileSelect');
-    if (cfSel && mw.configFile) cfSel.value = mw.configFile;
     const newMwInput = document.getElementById('newMwFileName');
     if (newMwInput) { newMwInput.style.display = 'none'; newMwInput.value = ''; }
     const mwTplSel2 = document.getElementById('mwTemplate');
     if (mwTplSel2) mwTplSel2.value = '';
     setMwMode('yaml');
     _showMwWizard('');
+    await _populateConfigFileSelect('mw');
+    const cfSel = document.getElementById('mwConfigFileSelect');
+    if (cfSel && mw.configFile) cfSel.value = mw.configFile;
     document.getElementById('mwModal').style.display = 'flex';
     _initMwMonaco(mw.yaml.trim());
     _loadCustomMwTemplates();
@@ -2287,7 +2412,11 @@ async function loadOverviewStats() {
         }
 
         if (middlewares.status === 'fulfilled') {
-            const all = [...(middlewares.value.http||[]), ...(middlewares.value.tcp||[])];
+            let all = [...(middlewares.value.http||[]), ...(middlewares.value.tcp||[])];
+            if (_activeAgent && _allMiddlewares && _allMiddlewares.length > 0) {
+                const _managedMwNames = new Set(_allMiddlewares.map(m => m.name));
+                all = all.filter(m => _managedMwNames.has((m.name || '').split('@')[0]));
+            }
             const mc = statusCounts(all);
             document.getElementById('statMiddlewares').textContent = all.length;
             document.getElementById('statMwSuccess').textContent   = mc.s;
@@ -2301,7 +2430,6 @@ async function loadOverviewStats() {
             document.getElementById('cmpMwErr').textContent        = mc.e;
             renderDonut('donutMw', mc.s, mc.w, mc.e);
             renderBar('barMiddlewares', mc.s, mc.w, mc.e);
-            document.getElementById('countMw').textContent = all.length;
         }
 
         
@@ -2320,13 +2448,15 @@ async function loadOverviewStats() {
             }).join('');
             _applyEntrypointsVisibility();
             const epNames = entrypoints.value.map(e => e.name);
-            try {
-                const srRes = await fetch('/api/settings/self-route');
-                const sr = await srRes.json();
-                if (sr.domain && sr.entry_point && !epNames.includes(sr.entry_point)) {
-                    _showSelfRouteEpWarning(sr.entry_point, sr.default_entry_point || epNames[0]);
-                }
-            } catch(e) {}
+            if (!_activeAgent) {
+                try {
+                    const srRes = await fetch('/api/settings/self-route');
+                    const sr = await srRes.json();
+                    if (sr.domain && sr.entry_point && !epNames.includes(sr.entry_point)) {
+                        _showSelfRouteEpWarning(sr.entry_point, sr.default_entry_point || epNames[0]);
+                    }
+                } catch(e) {}
+            }
         }
 
     } catch (e) {
@@ -4701,6 +4831,7 @@ function _initMobileFilterBars() {
         const res  = await fetch('/api/settings');
         const data = await res.json();
         const tabs = data.visible_tabs || {};
+        _localTabsCache = tabs;
         applyTabVisibility(tabs);
         if (tabs.dashboard) switchTab('dashboard');
     } catch(e) {
