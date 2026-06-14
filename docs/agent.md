@@ -30,7 +30,7 @@ When a remote agent is active:
 - **Logs** - The Logs tab shows the agent's access log when `ACCESS_LOG_PATH` is set on the agent. When installed via the installer script alongside Traefik, this is set automatically.
 - **Certificates** - The Certificates tab shows certs from the agent's `acme.json` when `ACME_JSON_PATH` is set. When installed via the installer script alongside Traefik, this is set automatically.
 - **CrowdSec** - If the agent has `CROWDSEC_LAPI_URL` and `CROWDSEC_API_KEY` configured, the CrowdSec tab shows that server's decisions and alerts.
-- **Settings sidebar** - When an agent is active, only agent-relevant Settings panels are shown: Backups, Route Monitoring tab toggles, Static Config (if configured), System Monitoring tab toggles, and Templates. Authentication, Connection, and Notifications are hidden - they only apply to the Host.
+- **Settings sidebar** - When an agent is active, only agent-relevant Settings panels are shown: Backups, Route Monitoring tab toggles, Static Config (if configured), System Monitoring tab toggles (Tab Visibility and File Paths only), and Templates. Authentication, Connection, Notifications, and the CrowdSec credentials sub-tab are hidden - they only apply to the Host. CrowdSec on the agent is configured via `CROWDSEC_LAPI_URL` and `CROWDSEC_API_KEY` env vars on the agent itself.
 
 ## Install via installer script
 
@@ -146,6 +146,26 @@ sudo systemctl enable --now tma
 |---|---|---|
 | `CROWDSEC_LAPI_URL` | - | CrowdSec LAPI URL (e.g. `http://crowdsec:8080`) |
 | `CROWDSEC_API_KEY` | - | CrowdSec bouncer API key |
+
+**If CrowdSec runs as a systemd service on the same host as the agent:**
+
+The agent container cannot reach `127.0.0.1` on the host directly. Use `host.docker.internal` instead and add `extra_hosts` to the agent service:
+
+```yaml
+services:
+  traefik-manager-agent:
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      - CROWDSEC_LAPI_URL=http://host.docker.internal:8070
+```
+
+You also need to allow the agent's Docker network subnet to reach the CrowdSec LAPI port through the host firewall. Find the subnet and add the rule:
+
+```bash
+docker network inspect <your-network> | grep Subnet
+sudo ufw allow from <subnet> to any port <crowdsec-port> proto tcp
+```
 
 ### Git backup
 

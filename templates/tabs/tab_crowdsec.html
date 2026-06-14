@@ -1,13 +1,12 @@
+<script>window._hostCsEnabled = {{ crowdsec_enabled | tojson }};</script>
 <div id="tab-crowdsec" class="tab-content">
-    {% if not crowdsec_enabled %}
-    <div class="flex flex-col items-center justify-center py-20 gap-4" style="color:var(--muted)">
+    <div id="csNotConfigured" class="flex flex-col items-center justify-center py-20 gap-4" style="color:var(--muted);display:none!important">
         <i class="ph-light ph-shield-slash text-5xl opacity-40"></i>
         <div class="text-center">
             <p class="font-medium text-sm mb-1" style="color:var(--text)">CrowdSec not configured</p>
             <p class="text-xs">Add your LAPI URL and API key in <strong>Settings &rarr; System Monitoring &rarr; CrowdSec</strong></p>
         </div>
     </div>
-    {% else %}
 
     <div id="crowdsecStats" class="grid grid-cols-3 gap-3 mb-4"></div>
 
@@ -60,7 +59,6 @@
         </div>
     </div>
 
-    {% endif %}
 </div>
 
 <div id="csBanModal" style="display:none;position:fixed;inset:0;z-index:200;background:rgba(0,0,0,0.5)" onclick="if(event.target===this)closeCsBanModal()">

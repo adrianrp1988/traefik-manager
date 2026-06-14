@@ -1534,6 +1534,14 @@ function _updateSettingsSidebarForAgent(active) {
     if (keysBtn) keysBtn.style.display = active ? '' : 'none';
     const keysMob = document.getElementById('msb-agent-keys-mobile');
     if (keysMob) keysMob.style.display = active ? '' : 'none';
+    const csTab = document.getElementById('system-tab-crowdsec');
+    if (csTab) {
+        csTab.style.display = active ? 'none' : '';
+        if (active && csTab.classList.contains('active')) {
+            const firstTab = document.querySelector('#mpanel-system .auth-sub-tab:not([style*="display: none"])');
+            if (firstTab) firstTab.click();
+        }
+    }
 }
 
 function switchSettingsPanel(id, btn) {

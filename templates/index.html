@@ -4292,6 +4292,14 @@ async function refreshCrowdSecTab() {
     const decEl   = document.getElementById('csDecisionsTable');
     const altEl   = document.getElementById('csAlertsTable');
     const statsEl = document.getElementById('crowdsecStats');
+    const notCfgEl = document.getElementById('csNotConfigured');
+    if (!_activeAgent && !window._hostCsEnabled) {
+        if (notCfgEl) notCfgEl.style.setProperty('display', 'flex', 'important');
+        if (decEl) decEl.closest('#csDecisionsSection')?.style.setProperty('display','none');
+        if (statsEl) statsEl.innerHTML = '';
+        return;
+    }
+    if (notCfgEl) notCfgEl.style.setProperty('display', 'none', 'important');
     if (!decEl) return;
     const spinner = `<div class="text-center py-8" style="color:var(--muted)"><i class="ph-light ph-spinner-gap text-3xl block mb-2 animate-spin opacity-40"></i><p class="text-xs">Loading...</p></div>`;
     decEl.innerHTML = spinner;
@@ -4301,11 +4309,26 @@ async function refreshCrowdSecTab() {
             agentFetch('/api/crowdsec/decisions'),
             agentFetch('/api/crowdsec/alerts'),
         ]);
-        _csLapiOnline = decRes.ok;
-        const decisions = decRes.ok ? await decRes.json() : [];
-        const alerts    = altRes.ok ? await altRes.json() : [];
-        _csDecisions = Array.isArray(decisions) ? decisions : [];
-        _csAlerts    = Array.isArray(alerts)    ? alerts    : [];
+        if (!decRes.ok) {
+            if (decRes.status === 404 && _activeAgent) {
+                if (notCfgEl) notCfgEl.style.setProperty('display', 'flex', 'important');
+                if (decEl) decEl.closest('#csDecisionsSection')?.style.setProperty('display','none');
+                if (statsEl) statsEl.innerHTML = '';
+                return;
+            }
+            _csLapiOnline = false;
+            let errMsg = `CrowdSec LAPI unavailable (HTTP ${decRes.status})`;
+            try { errMsg = (await decRes.json()).error || errMsg; } catch {}
+            _renderCsStats([], [], false, statsEl);
+            decEl.innerHTML = `<div class="text-center py-8 text-xs" style="color:var(--muted)">${_esc(errMsg)}</div>`;
+            if (altEl) altEl.innerHTML = '';
+            return;
+        }
+        _csLapiOnline = true;
+        const rawDec  = await decRes.json();
+        const rawAlt  = altRes.ok ? await altRes.json() : [];
+        _csDecisions = Array.isArray(rawDec) ? rawDec : [];
+        _csAlerts    = Array.isArray(rawAlt) ? rawAlt : [];
         _csDecisionsPage = 1;
         _renderCsStats(_csDecisions, _csAlerts, _csLapiOnline, statsEl);
         _csApplyFilters();
@@ -4533,7 +4556,7 @@ function _renderCsAlerts(alerts, el) {
 async function csUnban(id) {
     if (!confirm(`Delete decision ${id} (unban IP)?`)) return;
     try {
-        const res = await fetch(`/api/crowdsec/decisions/${id}`, {
+        const res = await agentFetch(`/api/crowdsec/decisions/${id}`, {
             method: 'DELETE', headers: {'X-CSRFToken': _csrfToken()}
         }).then(r => r.json());
         if (res.ok) { addNotification('success', `Decision ${id} deleted`); refreshCrowdSecTab(); }
