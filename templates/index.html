@@ -424,7 +424,7 @@ function _renderServerSwitcherList(runHealthChecks) {
         <div class="notif-item${localActive ? ' active' : ''}" onclick="switchServer(null)" style="cursor:pointer;${localActive?'background:var(--input-bg);':''}">
             <div class="flex items-center gap-2 py-1">
                 <span class="w-2 h-2 rounded-full flex-shrink-0" style="background:var(--green)"></span>
-                <span class="text-xs font-medium" style="color:var(--text)">Local</span>
+                <span class="text-xs font-medium" style="color:var(--text)">Host</span>
                 ${localActive ? '<i class="ph-bold ph-check text-xs ml-auto" style="color:var(--blue)"></i>' : ''}
             </div>
         </div>` +
@@ -471,7 +471,7 @@ function switchServer(agentId) {
         applyTabVisibility(_localTabsCache);
     }
     const label = document.getElementById('serverSwitcherLabel');
-    if (label) label.textContent = agent ? agent.name : 'Local';
+    if (label) label.textContent = agent ? agent.name : 'Host';
     document.getElementById('serverSwitcherMenu')?.classList.remove('open');
     const chip = document.getElementById('agentServerLabel');
     if (chip) { chip.textContent = agent ? agent.name : ''; chip.style.display = agent ? '' : 'none'; }
