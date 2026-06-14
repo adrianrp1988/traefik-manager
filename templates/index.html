@@ -2305,35 +2305,36 @@ async function loadOverviewStats() {
                 apiStatusMap[shortName] = { status: r.status || 'unknown', error: r.error || null };
             });
 
-            const hc = statusCounts(http);
-            document.getElementById('statHttpRouters').textContent = http.length;
+            const _isFile = r => (r.provider || (r.name||'').split('@')[1]||'') === 'file';
+            const httpStat   = _activeAgent ? http.filter(_isFile)   : http;
+            const tcpAllStat = _activeAgent ? tcpAll.filter(_isFile) : tcpAll;
+
+            const hc = statusCounts(httpStat);
+            document.getElementById('statHttpRouters').textContent = httpStat.length;
             document.getElementById('statHttpSuccess').textContent = hc.s;
-            document.getElementById('pctHttpSuccess').textContent  = pct(hc.s, http.length);
+            document.getElementById('pctHttpSuccess').textContent  = pct(hc.s, httpStat.length);
             document.getElementById('statHttpWarn').textContent    = hc.w;
-            document.getElementById('pctHttpWarn').textContent     = pct(hc.w, http.length);
+            document.getElementById('pctHttpWarn').textContent     = pct(hc.w, httpStat.length);
             document.getElementById('statHttpErr').textContent     = hc.e;
-            document.getElementById('pctHttpErr').textContent      = pct(hc.e, http.length);
+            document.getElementById('pctHttpErr').textContent      = pct(hc.e, httpStat.length);
             document.getElementById('cmpHttpSuccess').textContent  = hc.s;
             document.getElementById('cmpHttpWarn').textContent     = hc.w;
             document.getElementById('cmpHttpErr').textContent      = hc.e;
             renderDonut('donutHttp', hc.s, hc.w, hc.e);
             renderBar('barHttpRouters', hc.s, hc.w, hc.e);
-            const _isFile = r => (r.provider || (r.name||'').split('@')[1]||'') === 'file';
-            const _countHttp   = _activeAgent ? http.filter(_isFile).length   : http.length;
-            const _countTcpAll = _activeAgent ? tcpAll.filter(_isFile).length : tcpAll.length;
-            document.getElementById('countRoutes').textContent = _countHttp + _countTcpAll;
+            document.getElementById('countRoutes').textContent = httpStat.length + tcpAllStat.length;
 
             const dockerCount = [...http, ...tcpAll].filter(r => (r.provider || (r.name||'').split('@')[1]||'') === 'docker').length;
             document.getElementById('dockerTabCount').textContent = dockerCount || '-';
 
-            const tc = statusCounts(tcpAll);
-            document.getElementById('statTcpUdp').textContent     = tcpAll.length;
+            const tc = statusCounts(tcpAllStat);
+            document.getElementById('statTcpUdp').textContent     = tcpAllStat.length;
             document.getElementById('statTcpSuccess').textContent  = tc.s;
-            document.getElementById('pctTcpSuccess').textContent   = pct(tc.s, tcpAll.length);
+            document.getElementById('pctTcpSuccess').textContent   = pct(tc.s, tcpAllStat.length);
             document.getElementById('statTcpWarn').textContent     = tc.w;
-            document.getElementById('pctTcpWarn').textContent      = pct(tc.w, tcpAll.length);
+            document.getElementById('pctTcpWarn').textContent      = pct(tc.w, tcpAllStat.length);
             document.getElementById('statTcpErr').textContent      = tc.e;
-            document.getElementById('pctTcpErr').textContent       = pct(tc.e, tcpAll.length);
+            document.getElementById('pctTcpErr').textContent       = pct(tc.e, tcpAllStat.length);
             document.getElementById('cmpTcpSuccess').textContent   = tc.s;
             document.getElementById('cmpTcpWarn').textContent      = tc.w;
             document.getElementById('cmpTcpErr').textContent       = tc.e;
