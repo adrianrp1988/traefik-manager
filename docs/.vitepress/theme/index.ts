@@ -31,8 +31,8 @@ export default {
 
     return h(DefaultTheme.Layout, null, {
       'nav-bar-content-after': () => [h(KoFiButton), h(GitHubStars)],
-      'home-features-before': () => h(ShowcaseMockup),
-      'home-features-after': () => h(InstallSection),
+      'home-features-before': () => [h(InstallSection), h(ShowcaseMockup)],
+      'home-features-after': () => null,
     })
   },
   enhanceApp({ app }: { app: any }) {
