@@ -397,7 +397,7 @@ func (a *App) backupCreateHandler(w http.ResponseWriter, r *http.Request) {
 	if len(names) > 0 {
 		last = names[len(names)-1]
 	}
-	jsonOK(w, map[string]any{"ok": true, "name": last})
+	jsonOK(w, map[string]any{"ok": true, "name": last, "count": len(names)})
 }
 
 func (a *App) createBackup() ([]string, error) {

@@ -1880,6 +1880,12 @@ async function loadBackups() {
     try {
         const res  = await _backupFetch('/api/backups');
         const raw  = await res.json();
+        if (!res.ok) {
+            const msg = raw.error || `Error ${res.status}`;
+            if (routesList) routesList.innerHTML = `<p class="text-sm px-1" style="color:var(--red)">${_esc(msg)}</p>`;
+            if (staticList) staticList.innerHTML = '';
+            return;
+        }
         const rawArr  = Array.isArray(raw) ? raw : (raw.backups || []);
         const backups = rawArr.map(b => ({ ...b, modified: b.modified || b.date || '' }));
         const routes  = isAgent ? backups : backups.filter(b => b.kind !== 'static');
@@ -1887,8 +1893,8 @@ async function loadBackups() {
         _renderBackupList('sm-backups-list', routes);
         if (!isAgent) _renderBackupList('sm-static-backups-list', statics);
     } catch (e) {
-        if (routesList) routesList.innerHTML = `<p class="text-sm" style="color:var(--red)">Failed to load backups</p>`;
-        if (staticList) staticList.innerHTML = `<p class="text-sm" style="color:var(--red)">Failed to load backups</p>`;
+        if (routesList) routesList.innerHTML = `<p class="text-sm px-1" style="color:var(--red)">Failed to load backups</p>`;
+        if (staticList) staticList.innerHTML = `<p class="text-sm px-1" style="color:var(--red)">Failed to load backups</p>`;
     }
 }
 
@@ -2931,14 +2937,19 @@ function agentCfgChanged() {
     const volLines = [`      - ${configPath}:${configPath}`];
     if (staticPath)  volLines.push(`      - ${staticPath}:${staticPath}`);
     if (backupDir)   volLines.push(`      - ${backupDir}:/app/backups`);
+    else             volLines.push(`      - tma_backups:/app/backups`);
     if (acmePath)    volLines.push(`      - ${acmePath}:${acmePath}:ro`);
     if (logPath)     volLines.push(`      - ${logPath}:${logPath}:ro`);
     if (pluginsDir)  volLines.push(`      - ${pluginsDir}:${pluginsDir}:ro`);
     if (restart === 'socket') volLines.push(`      - /var/run/docker.sock:/var/run/docker.sock:ro`);
     if (restart === 'poison-pill') volLines.push(`      - traefik-signals:/signals`);
 
+    const namedVols = [];
+    if (!backupDir) namedVols.push(`  tma_backups:`);
+    if (restart === 'poison-pill') namedVols.push(`  traefik-signals:`);
+
     let compose = `services:\n  traefik-manager-agent:\n    image: ghcr.io/chr0nzz/traefik-manager-agent:latest\n    restart: unless-stopped\n    ports:\n      - "${agentPort}:${agentPort}"\n    environment:\n${envLines.join('\n')}\n    volumes:\n${volLines.join('\n')}`;
-    if (restart === 'poison-pill') compose += `\n\nvolumes:\n  traefik-signals:`;
+    if (namedVols.length) compose += `\n\nvolumes:\n${namedVols.join('\n')}`;
 
     const runParts = [`docker run -d \\`, `  --name traefik-manager-agent \\`, `  -p ${agentPort}:${agentPort} \\`];
     envLines.forEach(e => runParts.push(`  -e ${e.replace(/^\s+- /, '')} \\`));

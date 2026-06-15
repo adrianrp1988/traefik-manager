@@ -77,7 +77,13 @@ services:
     volumes:
       - /host/config:/app/config
       - /etc/traefik/traefik.yml:/etc/traefik/traefik.yml
+      - tma_backups:/app/backups
+
+volumes:
+  tma_backups:
 ```
+
+> **Backup persistence**: Always include the `tma_backups` named volume (or a bind mount to a host path via `BACKUP_DIR`). Without it, all backup files stored in `/app/backups` are lost when the container is recreated (e.g. on image update). The Settings - Agents wizard generates this volume automatically.
 
 ## Install via binary
 
