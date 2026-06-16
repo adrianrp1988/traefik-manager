@@ -1615,6 +1615,8 @@ async function deleteSelfRoute() {
 function renderRouteGrid(apps) {
     window._lastRenderedApps = apps;
     if (_activeAgent) apps = apps.filter(a => !a.provider || a.provider === 'file');
+    const countEl = document.getElementById('countRoutes');
+    if (countEl) countEl.textContent = apps.length;
     const grid = document.getElementById('routeGrid');
     if (!grid) return;
     const emptyEl = document.getElementById('routeEmpty');
@@ -2341,7 +2343,6 @@ async function loadOverviewStats() {
             document.getElementById('cmpHttpErr').textContent      = hc.e;
             renderDonut('donutHttp', hc.s, hc.w, hc.e);
             renderBar('barHttpRouters', hc.s, hc.w, hc.e);
-            document.getElementById('countRoutes').textContent = http.filter(_isFile).length + tcpAll.filter(_isFile).length;
 
             const dockerCount = [...http, ...tcpAll].filter(r => (r.provider || (r.name||'').split('@')[1]||'') === 'docker').length;
             document.getElementById('dockerTabCount').textContent = dockerCount || '-';
