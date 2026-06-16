@@ -2664,40 +2664,48 @@ def _git_ensure_repo():
         _git_run(['config', 'user.name', 'Traefik Manager'])
     return repo_dir
 
+_git_lock = threading.Lock()
+
 def _git_push_configs(action='backup'):
     s = load_settings()
     if not s.get('git_backup_repo', '').strip():
         return False, 'No repository configured'
     branch = s.get('git_backup_branch', 'main').strip() or 'main'
     tmpl   = s.get('git_backup_commit_message', 'traefik-manager: {action} at {timestamp}')
-    try:
-        repo_dir = _git_ensure_repo()
-    except Exception as e:
-        return False, f'Repo init failed: {e}'
-    dyn_dir    = os.path.join(repo_dir, 'dynamic')
-    static_dir = os.path.join(repo_dir, 'static')
-    os.makedirs(dyn_dir,    exist_ok=True)
-    os.makedirs(static_dir, exist_ok=True)
-    for p in CONFIG_PATHS:
-        if os.path.exists(p):
-            shutil.copy2(p, os.path.join(dyn_dir, os.path.basename(p)))
-    sp = _get_static_config_path()
-    if sp and os.path.exists(sp):
-        shutil.copy2(sp, os.path.join(static_dir, os.path.basename(sp)))
-    ts  = time.strftime('%Y-%m-%d %H:%M:%S')
-    msg = tmpl.replace('{action}', action).replace('{timestamp}', ts)
-    _git_run(['add', '-A'])
-    _, _, rc = _git_run(['diff', '--cached', '--quiet'])
-    if rc == 0:
-        return True, 'No changes'
-    _, err, rc = _git_run(['commit', '-m', msg])
-    if rc != 0:
-        return False, f'Commit failed: {err}'
-    _, err, rc = _git_run(['push', '-u', 'origin', branch])
-    if rc != 0:
-        return False, f'Push failed: {err}'
-    logger.info(f"Git backup: {msg}")
-    return True, ''
+    with _git_lock:
+        try:
+            repo_dir = _git_ensure_repo()
+        except Exception as e:
+            return False, f'Repo init failed: {e}'
+        # Sync the local clone to the remote first so the push always fast-forwards.
+        # This self-heals a diverged clone that would otherwise reject every push.
+        _, _, frc = _git_run(['fetch', 'origin', branch])
+        if frc == 0:
+            _git_run(['reset', '--hard', 'FETCH_HEAD'])
+        dyn_dir    = os.path.join(repo_dir, 'dynamic')
+        static_dir = os.path.join(repo_dir, 'static')
+        os.makedirs(dyn_dir,    exist_ok=True)
+        os.makedirs(static_dir, exist_ok=True)
+        for p in CONFIG_PATHS:
+            if os.path.exists(p):
+                shutil.copy2(p, os.path.join(dyn_dir, os.path.basename(p)))
+        sp = _get_static_config_path()
+        if sp and os.path.exists(sp):
+            shutil.copy2(sp, os.path.join(static_dir, os.path.basename(sp)))
+        ts  = time.strftime('%Y-%m-%d %H:%M:%S')
+        msg = tmpl.replace('{action}', action).replace('{timestamp}', ts)
+        _git_run(['add', '-A'])
+        _, _, rc = _git_run(['diff', '--cached', '--quiet'])
+        if rc == 0:
+            return True, 'No changes'
+        _, err, rc = _git_run(['commit', '-m', msg])
+        if rc != 0:
+            return False, f'Commit failed: {err}'
+        _, err, rc = _git_run(['push', 'origin', f'HEAD:{branch}'])
+        if rc != 0:
+            return False, f'Push failed: {err}'
+        logger.info(f"Git backup: {msg}")
+        return True, ''
 
 def _git_push_if_enabled(action='backup'):
     try:
@@ -3921,6 +3929,7 @@ def api_toggle_route(route_id):
             _toggle_route_agent(agent, agent_id, route_id, bool(enable))
         else:
             _toggle_route(route_id, bool(enable))
+            threading.Thread(target=lambda: _git_push_if_enabled('route toggle'), daemon=True).start()
         return jsonify({'ok': True})
     except Exception as e:
         logger.error(f"Toggle route error: {e}")
@@ -4046,6 +4055,7 @@ def api_route_raw_save(route_id):
                 pass
         logger.info(f"Route '{rname}' raw config saved: {target_path}")
         add_notification(f"Route '{rname}' updated", 'success')
+        threading.Thread(target=lambda: _git_push_if_enabled('route raw save'), daemon=True).start()
         return jsonify({'ok': True})
     except Exception as e:
         logger.exception("Route raw save error")
@@ -4327,7 +4337,11 @@ def delete_entry(router_id):
             disabled = settings.get('disabled_routes', {})
             if agent:
                 agent_id = request.form.get('agent_id', '').strip()
-                store_key = f"{agent_id}::{plain_id}"
+                store_key = f"agent_{agent_id}::{router_id}"
+                if store_key not in disabled:
+                    cand = [k for k in disabled
+                            if k.startswith(f"agent_{agent_id}::") and (k.split('::')[-1] == plain_id)]
+                    store_key = cand[0] if cand else store_key
                 if store_key in disabled:
                     disabled.pop(store_key)
                     save_settings(disabled_routes=disabled)
@@ -4341,6 +4355,8 @@ def delete_entry(router_id):
                 return jsonify({'ok': False, 'message': f'Route "{plain_id}" not found'}), 404
             flash(f'Route "{plain_id}" not found', "error")
             return redirect(url_for('index'))
+        if not agent:
+            threading.Thread(target=lambda: _git_push_if_enabled('route delete'), daemon=True).start()
         msg = f"Deleted {plain_id}"
         add_notification('warning', f"Route {plain_id} deleted")
         if fetch:
@@ -4453,6 +4469,8 @@ def delete_middleware(mw_name):
                     create_backup(target_path)
                     save_config(_strip_empty_sections(config), target_path)
                     break
+        if not agent:
+            threading.Thread(target=lambda: _git_push_if_enabled('middleware delete'), daemon=True).start()
         msg = f"Deleted middleware {mw_name}"
         add_notification('warning', f"Middleware {mw_name} deleted")
         if fetch:
@@ -4796,6 +4814,35 @@ def api_agent_routes(agent_id):
             middlewares.extend(_build_middlewares(config, config_file=fname))
 
         apps.extend(_build_external_routes(all_routers, svc_urls))
+
+        prefix = f"agent_{agent_id}::"
+        for store_key, rdata in load_settings().get('disabled_routes', {}).items():
+            if not store_key.startswith(prefix):
+                continue
+            rid      = store_key[len(prefix):]
+            rname    = rid.split('::', 1)[1] if '::' in rid else rid
+            proto    = rdata.get('protocol', 'http')
+            router   = rdata.get('router', {})
+            svc_name = router.get('service', '')
+            svc      = rdata.get('service', {})
+            cf       = rdata.get('configFile', '')
+            servers  = svc.get('loadBalancer', {}).get('servers', [])
+            if proto == 'http':
+                target = servers[0].get('url', 'N/A') if servers else 'N/A'
+                apps.append({'id': rid, 'name': rname, 'rule': router.get('rule', ''),
+                             'service_name': svc_name, 'target': target,
+                             'middlewares': router.get('middlewares', []),
+                             'entryPoints': router.get('entryPoints', []),
+                             'protocol': 'http', 'tls': bool(router.get('tls')), 'enabled': False,
+                             'passHostHeader': svc.get('loadBalancer', {}).get('passHostHeader', True),
+                             'configFile': cf, 'provider': 'file', 'entrypointMiddlewares': []})
+            else:
+                target = servers[0].get('address', 'N/A') if servers else 'N/A'
+                apps.append({'id': rid, 'name': rname, 'rule': router.get('rule', ''),
+                             'service_name': svc_name, 'target': target,
+                             'middlewares': [], 'entryPoints': router.get('entryPoints', []),
+                             'protocol': proto, 'tls': bool(router.get('tls')) if proto == 'tcp' else False,
+                             'enabled': False, 'configFile': cf, 'provider': 'file'})
 
         return jsonify({'apps': apps, 'middlewares': middlewares, 'configErrors': config_errors})
     except requests.exceptions.ConnectionError:
