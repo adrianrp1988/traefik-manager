@@ -6,6 +6,8 @@ import secrets
 import logging
 import threading
 import subprocess
+import fcntl
+import contextlib
 import requests
 import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -2659,12 +2661,27 @@ def _git_ensure_repo():
             _git_run(['config', 'user.name', 'Traefik Manager'], cwd=repo_dir)
             _git_run(['pull', 'origin', branch], cwd=repo_dir)
     else:
-        _git_run(['remote', 'set-url', 'origin', auth_url])
+        _, _, rc = _git_run(['remote', 'set-url', 'origin', auth_url])
+        if rc != 0:
+            _git_run(['remote', 'add', 'origin', auth_url])
         _git_run(['config', 'user.email', 'traefik-manager@localhost'])
         _git_run(['config', 'user.name', 'Traefik Manager'])
     return repo_dir
 
-_git_lock = threading.Lock()
+@contextlib.contextmanager
+def _git_lock():
+    """Cross-process lock (flock) so concurrent gunicorn workers don't run git
+    operations on the same repo at once, which corrupts the index/remote state."""
+    os.makedirs(BACKUP_DIR, exist_ok=True)
+    f = open(os.path.join(BACKUP_DIR, '.git-push.lock'), 'w')
+    try:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        yield
+    finally:
+        try:
+            fcntl.flock(f, fcntl.LOCK_UN)
+        finally:
+            f.close()
 
 def _git_push_configs(action='backup'):
     s = load_settings()
@@ -2672,7 +2689,7 @@ def _git_push_configs(action='backup'):
         return False, 'No repository configured'
     branch = s.get('git_backup_branch', 'main').strip() or 'main'
     tmpl   = s.get('git_backup_commit_message', 'traefik-manager: {action} at {timestamp}')
-    with _git_lock:
+    with _git_lock():
         try:
             repo_dir = _git_ensure_repo()
         except Exception as e:
