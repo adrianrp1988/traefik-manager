@@ -844,7 +844,7 @@ Check connectivity to an agent.
 **Response**
 
 ```json
-{ "ok": true, "latency_ms": 12, "version": "1.5.0", "status": 200 }
+{ "ok": true, "latency_ms": 12, "version": "1.5.1", "status": 200 }
 ```
 
 Returns `"ok": false` if the agent is unreachable.

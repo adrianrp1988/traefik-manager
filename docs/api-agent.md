@@ -65,7 +65,7 @@ GET /health
 
 Response (no auth required):
 ```json
-{"ok": true, "version": "1.5.0"}
+{"ok": true, "version": "1.5.1"}
 ```
 
 ## Error responses
