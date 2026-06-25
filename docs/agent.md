@@ -136,6 +136,7 @@ sudo systemctl enable --now tma
 | `ACCESS_LOG_PATH` | - | Path to Traefik access log file |
 | `PLUGINS_DIR` | - | Path to Traefik plugins directory |
 | `BACKUP_DIR` | `/app/backups` | Directory where local `.bak` backup files are stored |
+| `BACKUP_KEEP_COUNT` | `0` | Keep only the last N `.bak` files per config file (0 = keep all) |
 
 ### Traefik restart
 

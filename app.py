@@ -25,7 +25,7 @@ from io import StringIO
 from cryptography.fernet import Fernet, InvalidToken
 
 GITHUB_REPO  = "chr0nzz/traefik-manager"
-APP_VERSION  = "1.5.2"
+APP_VERSION  = "1.6.0"
 
 
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
@@ -114,6 +114,7 @@ def _parse_agent_dict(a: dict) -> dict:
         'traefik_insecure_skip_verify': bool(a.get('traefik_insecure_skip_verify', False)),
         'config_path':                  str(a.get('config_path', '/app/config')).strip(),
         'backup_dir':                   str(a.get('backup_dir', '')).strip(),
+        'backup_keep_count':            str(a.get('backup_keep_count', '')).strip(),
         'static_config_path':           str(a.get('static_config_path', '')).strip(),
         'acme_json_path':               str(a.get('acme_json_path', '')).strip(),
         'access_log_path':              str(a.get('access_log_path', '')).strip(),
@@ -461,6 +462,7 @@ def load_settings() -> dict:
         'git_backup_auto_push':      True,
         'agents':                    [],
         'agent_api_rate_limit':      int(os.environ.get('AGENT_API_RATE_LIMIT', 30)),
+        'backup_keep_count':         int(os.environ.get('BACKUP_KEEP_COUNT', 0)),
     }
     if not os.path.exists(SETTINGS_PATH):
         return defaults
@@ -602,6 +604,11 @@ def load_settings() -> dict:
                 merged['agent_api_rate_limit'] = max(1, int(data['agent_api_rate_limit']))
             except Exception:
                 pass
+        if 'backup_keep_count' in data:
+            try:
+                merged['backup_keep_count'] = max(0, int(data['backup_keep_count']))
+            except Exception:
+                pass
         return merged
     except Exception as e:
         logger.warning(f"Could not load manager.yml, using defaults: {e}")
@@ -630,7 +637,7 @@ def save_settings(domains, cert_resolver, traefik_api_url,
                   git_backup_branch=None, git_backup_username=None,
                   git_backup_token=None, git_backup_commit_message=None,
                   git_backup_auto_push=None,
-                  agent_api_rate_limit=None):
+                  agent_api_rate_limit=None, backup_keep_count=None):
     if visible_tabs is None:
         visible_tabs = {t: False for t in OPTIONAL_TABS}
     _cur = load_settings()
@@ -706,6 +713,8 @@ def save_settings(domains, cert_resolver, traefik_api_url,
         git_backup_auto_push = _cur.get('git_backup_auto_push', True)
     if agent_api_rate_limit is None:
         agent_api_rate_limit = _cur.get('agent_api_rate_limit', int(os.environ.get('AGENT_API_RATE_LIMIT', 30)))
+    if backup_keep_count is None:
+        backup_keep_count = _cur.get('backup_keep_count', int(os.environ.get('BACKUP_KEEP_COUNT', 0)))
     otp_secret = _encrypt_otp_secret(otp_secret)
     oidc_client_secret_enc = _encrypt_otp_secret(oidc_client_secret) if oidc_client_secret else ''
     os.makedirs(os.path.dirname(SETTINGS_PATH), exist_ok=True)
@@ -760,6 +769,7 @@ def save_settings(domains, cert_resolver, traefik_api_url,
         'git_backup_commit_message': git_backup_commit_message,
         'git_backup_auto_push':      git_backup_auto_push,
         'agent_api_rate_limit':      agent_api_rate_limit,
+        'backup_keep_count':         backup_keep_count,
     })
     with open(tmp, 'w') as f:
         yaml.dump(_doc, f)
@@ -2558,6 +2568,32 @@ def ensure_backup_dir():
     if not os.path.exists(BACKUP_DIR):
         os.makedirs(BACKUP_DIR)
 
+def _backup_keep_count() -> int:
+    try:
+        v = load_settings().get('backup_keep_count')
+        if v in (None, ''):
+            v = os.environ.get('BACKUP_KEEP_COUNT', '0')
+        return max(0, int(v))
+    except Exception:
+        return 0
+
+def _prune_backups(base: str):
+    """Keep only the newest N .bak files for a given config file (0 = keep all)."""
+    keep = _backup_keep_count()
+    if keep <= 0:
+        return
+    pat = re.compile(r'^' + re.escape(base) + r'\.(\d{8}_\d{6})\.bak$')
+    matches = sorted(
+        (f for f in os.listdir(BACKUP_DIR) if pat.match(f)),
+        reverse=True,
+    )
+    for f in matches[keep:]:
+        try:
+            os.remove(os.path.join(BACKUP_DIR, f))
+            logger.info(f"Pruned old backup: {f}")
+        except OSError:
+            pass
+
 def create_backup(path=None):
     if path is None:
         path = CONFIG_PATH
@@ -2568,6 +2604,7 @@ def create_backup(path=None):
         dest = os.path.join(BACKUP_DIR, f"{base}.{ts}.bak")
         shutil.copy2(path, dest)
         logger.info(f"Backup created: {dest}")
+        _prune_backups(base)
         return dest
     return None
 
@@ -2685,7 +2722,7 @@ def _git_lock():
         finally:
             f.close()
 
-def _git_push_configs(action='backup'):
+def _git_push_configs(action='backup', custom_message=None):
     s = load_settings()
     if not s.get('git_backup_repo', '').strip():
         return False, 'No repository configured'
@@ -2712,7 +2749,10 @@ def _git_push_configs(action='backup'):
         if sp and os.path.exists(sp):
             shutil.copy2(sp, os.path.join(static_dir, os.path.basename(sp)))
         ts  = time.strftime('%Y-%m-%d %H:%M:%S')
-        msg = tmpl.replace('{action}', action).replace('{timestamp}', ts)
+        if custom_message and custom_message.strip():
+            msg = custom_message.strip()
+        else:
+            msg = tmpl.replace('{action}', action).replace('{timestamp}', ts)
         _git_run(['add', '-A'])
         _, _, rc = _git_run(['diff', '--cached', '--quiet'])
         if rc == 0:
@@ -2763,7 +2803,9 @@ def api_git_backup_status():
 @csrf_protect
 @login_required
 def api_git_backup_push():
-    ok, err = _git_push_configs('manual')
+    data    = request.get_json(silent=True) or {}
+    message = str(data.get('message', '')).strip()
+    ok, err = _git_push_configs('manual', custom_message=message or None)
     if ok:
         add_notification('success', 'Git backup pushed')
         return jsonify({'ok': True})
@@ -3167,6 +3209,7 @@ def api_save_settings():
         git_backup_token          = str(data.get('git_backup_token', ''))
         git_backup_commit_message = (str(data['git_backup_commit_message']).strip() or 'traefik-manager: {action} at {timestamp}') if 'git_backup_commit_message' in data else None
         git_backup_auto_push      = bool(data['git_backup_auto_push'])     if 'git_backup_auto_push'      in data else None
+        backup_keep_count         = max(0, int(data['backup_keep_count'])) if str(data.get('backup_keep_count', '')).strip() != '' else None
         existing = load_settings()
         if not webhook_password:
             webhook_password = existing.get('webhook_password', '')
@@ -3201,7 +3244,8 @@ def api_save_settings():
                       git_backup_username=git_backup_username,
                       git_backup_token=git_backup_token,
                       git_backup_commit_message=git_backup_commit_message,
-                      git_backup_auto_push=git_backup_auto_push)
+                      git_backup_auto_push=git_backup_auto_push,
+                      backup_keep_count=backup_keep_count)
         result = load_settings()
         result.pop('password_hash', None)
         result.pop('oidc_client_secret', None)
@@ -3284,6 +3328,31 @@ def api_save_tabs():
         return jsonify({'success': True, 'visible_tabs': vt})
     except Exception as e:
         logger.exception("Tab settings save error")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/settings/backup-retention', methods=['POST'])
+@csrf_protect
+@login_required
+def api_save_backup_retention():
+    try:
+        data     = request.get_json() or {}
+        keep     = max(0, int(data.get('backup_keep_count', 0)))
+        existing = load_settings()
+        save_settings(
+            domains=existing['domains'],
+            cert_resolver=existing['cert_resolver'],
+            traefik_api_url=existing['traefik_api_url'],
+            auth_enabled=existing['auth_enabled'],
+            password_hash=existing['password_hash'],
+            visible_tabs=existing['visible_tabs'],
+            backup_keep_count=keep,
+        )
+        return jsonify({'success': True, 'backup_keep_count': keep})
+    except (ValueError, TypeError):
+        return jsonify({'error': 'Invalid keep count'}), 400
+    except Exception as e:
+        logger.exception("Backup retention save error")
         return jsonify({'error': str(e)}), 500
 
 
@@ -4906,6 +4975,7 @@ def api_agents_create():
         'created_at': datetime.now(timezone.utc).isoformat(),
         'traefik_api_url':       str(data.get('traefik_api_url', 'http://traefik:8080')).strip(),
         'config_path':           str(data.get('config_path', '/app/config')).strip(),
+        'backup_keep_count':     str(data.get('backup_keep_count', '')).strip(),
         'static_config_path':    str(data.get('static_config_path', '')).strip(),
         'acme_json_path':        str(data.get('acme_json_path', '')).strip(),
         'access_log_path':       str(data.get('access_log_path', '')).strip(),
@@ -4946,7 +5016,7 @@ def api_agents_update(agent_id):
             updatable = [
                 'name', 'url', 'traefik_api_url', 'traefik_insecure_skip_verify',
                 'config_path', 'static_config_path',
-                'acme_json_path', 'access_log_path', 'plugins_dir', 'backup_dir',
+                'acme_json_path', 'access_log_path', 'plugins_dir', 'backup_dir', 'backup_keep_count',
                 'restart_method', 'traefik_container', 'docker_host', 'signal_file_path',
                 'crowdsec_lapi_url', 'crowdsec_machine_id', 'git_backup_enabled', 'git_backup_repo',
                 'git_backup_branch', 'git_backup_username', 'git_backup_auto_push',

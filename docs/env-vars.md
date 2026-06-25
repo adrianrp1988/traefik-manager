@@ -41,6 +41,7 @@ Variables marked ✅ **override** the corresponding `manager.yml` field on every
 | `CONFIG_PATHS` | _(unset)_ | - | Comma-separated list of config file paths |
 | `CONFIG_PATH` | `/app/config/dynamic.yml` | - | Single config file (default) |
 | `BACKUP_DIR` | `/app/backups` | - | Directory for timestamped config backups |
+| `BACKUP_KEEP_COUNT` | `0` | - | Keep only the last N `.bak` files per config file (0 = keep all) |
 | `SETTINGS_PATH` | `/app/config/manager.yml` | - | Path to the TM settings file |
 
 ### Static Config & Restart
@@ -343,6 +344,26 @@ volumes:
 == Linux (systemd)
 ```ini
 Environment=BACKUP_DIR=/var/lib/traefik-manager/backups
+```
+:::
+
+---
+
+### `BACKUP_KEEP_COUNT`
+
+**Default:** `0` (keep all)
+
+Limits how many timestamped `.bak` files are kept per config file. After each backup, older files beyond this count are pruned automatically. Set to `0` to keep every backup. On the host this can also be set in Settings - Backups; on a remote agent it is set via this environment variable.
+
+:::tabs
+== Docker / Podman
+```yaml
+environment:
+  - BACKUP_KEEP_COUNT=30
+```
+== Linux (systemd)
+```ini
+Environment=BACKUP_KEEP_COUNT=30
 ```
 :::
 
