@@ -211,7 +211,7 @@ When set, the in-UI password change and `flask reset-password` have no effect. R
 **Default:** `example.com`
 **Overrides:** `domains` in `manager.yml`
 
-Comma-separated list of base domains shown in the Add Route form.
+Comma-separated list of base domains shown in the Add Route form. This is a form convenience only - it does not affect Traefik configuration, TLS, or routing. Domains found in existing routes are added to the form automatically, and the form's **+** chip accepts any other domain, so this list is optional seeding.
 
 :::tabs
 == Docker / Podman
