@@ -24,6 +24,12 @@ The filter bar above the grid lets you narrow routes by:
 
 Toggle between **grid** (default) and **list** view using the button in the filter bar. List view shows a compact table with Status, Protocol, Name, Domain/Rule, Target, Entry Points, and action buttons.
 
+## App icons
+
+Enable **Settings - Interface - Routes - Show app icons** to display an app icon next to each route name, in both grid and list view. The toggle is **off by default** and is a per-browser preference (it applies to the Host and to remote agents).
+
+Icons use the same source and per-route overrides as the [Dashboard](tab-dashboard.md#icon): the slug is auto-detected from the route or service name via the selfh.st CDN. Any custom icon you set on a Dashboard card (a selfh.st slug or a Custom URL, for apps the name match does not recognize) is read from the dashboard config and shown on the Routes tab too. If an icon cannot be resolved it is hidden - no broken-image placeholder.
+
 ## Creating a route 
 
 Click **Add Route** in the top bar. Fill in:
@@ -33,13 +39,13 @@ Click **Add Route** in the top bar. Fill in:
 | Protocol | HTTP, TCP, or UDP |
 | Name | Unique identifier (used as the router and service key in `dynamic.yml`) |
 | Rule Mode | **Simple** (default) - use the Subdomain + Domain chip builder to generate a `Host()` rule. **Advanced rule** - type any valid Traefik rule directly (`PathPrefix`, `HostRegexp`, compound rules with `&&` / `\|\|`, etc.). Switch modes with the Simple / Advanced rule toggle at the top of the HTTP section. When editing a route with a complex rule, the form automatically opens in Advanced mode. |
-| Subdomain + Domain(s) | *(Simple mode only)* Subdomain field plus one or more domain chips. With multiple domains selected, generates a multi-host rule: `Host(\`sub.d1.com\`) \|\| Host(\`sub.d2.com\`)`. Long domain names are truncated in the chip display. |
+| Subdomain + Domain(s) | *(Simple mode only)* Subdomain field plus one or more domain chips. The chip list combines the Domains from Settings - Connection with domains **auto-detected from your existing routes**, and a **+** chip lets you type any other domain on the spot - no Settings trip required. With multiple domains selected, generates a multi-host rule: `Host(\`sub.d1.com\`) \|\| Host(\`sub.d2.com\`)`. Entering a full hostname (with dots) in the Subdomain field uses it as-is. The domain list is a form convenience only - it never affects your Traefik configuration. Long domain names are truncated in the chip display. |
 | Target IP / Port | Backend server to forward to |
 | Entry Points | Selectable chips fetched from the Traefik API - click to toggle. `websecure` is pre-selected for HTTP routes. UDP entry points are single-select. Falls back to a text input if the API returns no entry points. |
 | Middlewares | Selectable chips fetched from the Traefik API - click to toggle. Falls back to a text input if the API returns no middlewares. |
 | Backend Scheme | `HTTP` or `HTTPS` - the scheme Traefik uses to connect to your backend. Use `HTTPS` when the backend serves TLS internally. |
 | Pass Host Header | Enabled by default. Disable if the backend needs to see its own hostname instead of the original request `Host` header. Writes `passHostHeader: false` to the service in `dynamic.yml`. |
-| Cert Resolver | Shown for HTTP and TCP routes. Three options: **No TLS** (default) - omits the `tls` key entirely; **named resolver** - uses ACME to issue a certificate; **None (external / custom cert)** - writes `tls: {}` without a resolver, for certificates managed via `tls.yml` or another external source. |
+| Cert Resolver | Shown for HTTP and TCP routes. Three options: **No TLS** (default) - omits the `tls` key entirely; **named resolver** - uses ACME to issue a certificate; **None (external / custom cert)** - writes `tls: {}` without a resolver, for certificates managed via `tls.yml` or another external source. Named resolvers are detected automatically from your static config's `certificatesResolvers` (and from the Cert Resolver field in Settings), so a custom resolver shows up in the dropdown without re-typing it. When a remote agent is active, the agent's static config is read for its resolvers. |
 | Request wildcard certificate | Appears when a cert resolver is selected. Check this to add a `tls.domains` block with `main: yourdomain.com` and `sans: *.yourdomain.com` auto-filled from the selected domain. Use with DNS challenge resolvers (Cloudflare, Route 53, etc.) to request a wildcard certificate that covers all subdomains. |
 | TLS Options Profile | Appears when a cert resolver is selected. Select a named `tls.options` profile from the TLS Options tab to assign it to this router (e.g. `modern`, `strict`). Leave blank to use Traefik's default TLS settings. |
 | Skip TLS Verification | Adds `insecureSkipVerify: true` via a named `serversTransport` entry. Use for backends with self-signed certificates (e.g. Proxmox, Kasm). A yellow **TLS skip** badge appears on the route card. |

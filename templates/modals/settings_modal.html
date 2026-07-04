@@ -107,7 +107,7 @@
                 <div class="modal-panel" id="mpanel-connection">
                     <div>
                         <span class="settings-section-label">Domains</span>
-                        <div class="text-xs mb-2" style="color:var(--muted)">Comma-separated list of base domains used when adding routes.</div>
+                        <div class="text-xs mb-2" style="color:var(--muted)">Convenience list used to build <code class="font-mono">Host()</code> rules in the route form - it does not affect your Traefik configuration, TLS, or routing. Domains found in existing routes are added to the route form automatically, so this list is optional seeding.</div>
                         <input type="text" id="settingsDomains" class="input-field" placeholder="example.com, example.net" onblur="saveSettings()">
                     </div>
                     <div>
@@ -532,6 +532,19 @@
                                 <i class="ph-bold ph-warning text-sm flex-shrink-0"></i>
                                 Restoring overwrites your current config. A backup is created automatically before restoring.
                             </div>
+                            <div id="backupRetentionRow" class="flex items-center justify-between gap-2 mb-3 px-3 py-2 rounded-lg" style="background:var(--bg);border:1px solid var(--border);flex-shrink:0;">
+                                <div>
+                                    <div class="text-xs font-medium">Keep last N backups per file</div>
+                                    <div class="text-xs" style="color:var(--muted)">Older .bak files are pruned automatically. 0 = keep all.</div>
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <input id="backupKeepCount" type="number" min="0" class="input-field" style="width:80px;" placeholder="0">
+                                    <button onclick="saveBackupKeepCount('backupKeepCount')" id="backupKeepBtn" class="nav-btn text-xs"><i class="ph-bold ph-floppy-disk"></i> Save</button>
+                                </div>
+                            </div>
+                            <div id="backupRetentionEnvNote" style="display:none;background:rgba(36,161,222,0.06);border:1px solid rgba(36,161,222,0.2);color:var(--muted)" class="text-xs mb-3 px-3 py-2 rounded-lg flex-shrink-0">
+                                <i class="ph-bold ph-info" style="color:var(--blue)"></i> Backup retention on this agent is set via the <code>BACKUP_KEEP_COUNT</code> environment variable.
+                            </div>
                             <div id="sm-backups-list" style="flex:1;overflow-y:auto;min-height:0;">
                                 <div class="text-center py-8" style="color:var(--muted)">
                                     <i class="ph-light ph-spinner-gap text-2xl animate-spin block mb-2"></i>
@@ -549,6 +562,16 @@
                             <div class="text-xs mb-3 px-3 py-2 rounded-lg flex items-center gap-2" style="background:rgba(210,153,34,0.08);border:1px solid rgba(210,153,34,0.2);color:#d29922;flex-shrink:0;">
                                 <i class="ph-bold ph-warning text-sm flex-shrink-0"></i>
                                 Restoring overwrites your current static config. A backup is created automatically before restoring.
+                            </div>
+                            <div class="flex items-center justify-between gap-2 mb-3 px-3 py-2 rounded-lg" style="background:var(--bg);border:1px solid var(--border);flex-shrink:0;">
+                                <div>
+                                    <div class="text-xs font-medium">Keep last N backups per file</div>
+                                    <div class="text-xs" style="color:var(--muted)">Older .bak files are pruned automatically. 0 = keep all.</div>
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <input id="backupKeepCountStatic" type="number" min="0" class="input-field" style="width:80px;" placeholder="0">
+                                    <button onclick="saveBackupKeepCount('backupKeepCountStatic')" id="backupKeepBtnStatic" class="nav-btn text-xs"><i class="ph-bold ph-floppy-disk"></i> Save</button>
+                                </div>
                             </div>
                             <div id="sm-static-backups-list" style="flex:1;overflow-y:auto;min-height:0;">
                                 <div class="text-center py-8" style="color:var(--muted)">
@@ -576,6 +599,14 @@
                                 </div>
 
                                 <div id="gitStatusLine" class="text-xs mb-3 px-3 py-2 rounded-lg" style="background:var(--bg);border:1px solid var(--border);color:var(--muted);display:none;"></div>
+
+                                <div class="mb-3">
+                                    <label class="text-xs font-medium block mb-1">Commit message <span style="color:var(--muted)">(optional)</span></label>
+                                    <div style="display:flex;gap:8px;">
+                                        <input id="gitCommitMessage" type="text" class="input-field" style="flex:1;" placeholder="Describe this change, then Push Now">
+                                    </div>
+                                    <div class="text-xs mt-1" style="color:var(--muted)">Used for this push only. Leave blank to use the template above.</div>
+                                </div>
 
                                 <div id="gitEnvNote" style="display:none;background:rgba(36,161,222,0.06);border:1px solid rgba(36,161,222,0.2);color:var(--muted)" class="text-xs mb-3 px-3 py-2 rounded-lg">
                                     <i class="ph-bold ph-info" style="color:var(--blue)"></i> Git backup on this agent is configured via environment variables (<code>GIT_BACKUP_*</code>).
@@ -719,6 +750,18 @@
                                     <div class="text-xs" style="color:var(--muted)">Traefik entry point badges below the stat cards</div>
                                 </div>
                                 <div class="toggle-switch" id="toggle-ui-entrypoints" onclick="toggleUiPref('showEntrypoints')"><div class="toggle-knob"></div></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div style="margin-bottom:12px;">
+                        <div class="text-xs font-medium mb-2" style="color:var(--muted);display:flex;align-items:center;gap:5px;"><i class="ph-bold ph-list-bullets"></i> ROUTES</div>
+                        <div style="background:var(--input-bg);border:1px solid var(--border);border-radius:8px;overflow:hidden;">
+                            <div class="flex items-center justify-between" style="padding:10px 12px;">
+                                <div>
+                                    <div class="text-xs font-medium" style="color:var(--text)">Show app icons</div>
+                                    <div class="text-xs" style="color:var(--muted)">Display the app icon next to each route name, like the dashboard. Applies to host and agent routes.</div>
+                                </div>
+                                <div class="toggle-switch" id="toggle-route-icons" onclick="toggleRouteIcons()"><div class="toggle-knob"></div></div>
                             </div>
                         </div>
                     </div>
@@ -935,6 +978,11 @@
                                         <label class="settings-section-label">Backup Dir</label>
                                         <input id="agCfgBackupDir" type="text" class="input-field text-xs" placeholder="/app/backups" oninput="agentCfgChanged()">
                                         <p class="text-xs mt-1" style="color:var(--muted)">Where the agent stores local backup zips. Defaults to <code>/app/backups</code> - set a host path here to persist backups across container restarts.</p>
+                                    </div>
+                                    <div>
+                                        <label class="settings-section-label">Backup Retention <span style="color:var(--muted)">(optional)</span></label>
+                                        <input id="agCfgKeepCount" type="number" min="0" class="input-field text-xs" placeholder="0" oninput="agentCfgChanged()">
+                                        <p class="text-xs mt-1" style="color:var(--muted)">Keep only the last N <code>.bak</code> files per config file (<code>BACKUP_KEEP_COUNT</code>). 0 = keep all.</p>
                                     </div>
                                     <div>
                                         <label class="settings-section-label">ACME / Certs Path <span style="color:var(--muted)">(optional)</span></label>
@@ -1435,11 +1483,18 @@ async function gitTestConnection() {
 async function gitPushNow() {
     const btn = document.getElementById('gitPushBtn');
     if (btn) { btn.disabled = true; btn.innerHTML = '<i class="ph-light ph-spinner-gap animate-spin text-xs"></i> Pushing…'; }
+    const msgEl   = document.getElementById('gitCommitMessage');
+    const message = msgEl ? msgEl.value.trim() : '';
     try {
-        const res  = await _backupFetch('/api/backup/git/push', { method: 'POST', headers: _csrfHeaders() });
+        const res  = await _backupFetch('/api/backup/git/push', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ..._csrfHeaders() },
+            body: JSON.stringify({ message }),
+        });
         const data = await res.json();
         if (data.ok) {
             showToast('Pushed successfully', 'success');
+            if (msgEl) msgEl.value = '';
             loadGitStatus();
             loadGitCommits();
         } else {
@@ -1905,6 +1960,18 @@ async function loadBackups() {
     if (staticTab)  staticTab.style.display = isAgent ? 'none' : '';
     const chip = document.getElementById('backupRemoteChip');
     if (chip) { chip.textContent = isAgent ? _activeAgent.name : ''; chip.style.display = isAgent ? '' : 'none'; }
+    const retRow     = document.getElementById('backupRetentionRow');
+    const retEnvNote = document.getElementById('backupRetentionEnvNote');
+    if (retRow)     retRow.style.display     = isAgent ? 'none' : 'flex';
+    if (retEnvNote) retEnvNote.style.display = isAgent ? '' : 'none';
+    if (!isAgent) {
+        try {
+            const sres = await fetch('/api/settings');
+            const sdat = await sres.json();
+            _setVal('backupKeepCount', (sdat.backup_keep_count ?? 0));
+            _setVal('backupKeepCountStatic', (sdat.backup_keep_count ?? 0));
+        } catch (e) {}
+    }
     const routesList  = document.getElementById('sm-backups-list');
     const staticList  = document.getElementById('sm-static-backups-list');
     const spinner = `<div class="text-center py-8" style="color:var(--muted)"><i class="ph-light ph-spinner-gap text-2xl animate-spin block mb-2"></i>Loading…</div>`;
@@ -1929,6 +1996,30 @@ async function loadBackups() {
         if (routesList) routesList.innerHTML = `<p class="text-sm px-1" style="color:var(--red)">Failed to load backups</p>`;
         if (staticList) staticList.innerHTML = `<p class="text-sm px-1" style="color:var(--red)">Failed to load backups</p>`;
     }
+}
+
+async function saveBackupKeepCount(sourceId) {
+    const input = document.getElementById(sourceId || 'backupKeepCount');
+    if (!input) return;
+    const btnId = sourceId === 'backupKeepCountStatic' ? 'backupKeepBtnStatic' : 'backupKeepBtn';
+    const btn   = document.getElementById(btnId);
+    let n = parseInt(input.value, 10);
+    if (isNaN(n) || n < 0) n = 0;
+    _setVal('backupKeepCount', n);
+    _setVal('backupKeepCountStatic', n);
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="ph-light ph-spinner-gap animate-spin text-xs"></i> Saving…'; }
+    try {
+        const res = await fetch('/api/settings/backup-retention', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ..._csrfHeaders() },
+            body: JSON.stringify({ backup_keep_count: n }),
+        });
+        if (res.ok) showToast('Retention saved', 'success');
+        else        showToast('Failed to save retention', 'error');
+    } catch (e) {
+        showToast('Failed to save retention', 'error');
+    }
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ph-bold ph-floppy-disk"></i> Save'; }
 }
 
 async function createAndLoadBackups() {
@@ -1986,6 +2077,18 @@ function toggleTraefikBadge() {
     const show = localStorage.getItem('showTraefikBadge') !== 'false';
     localStorage.setItem('showTraefikBadge', show ? 'false' : 'true');
     _applyTraefikBadgeVisibility();
+}
+
+function toggleRouteIcons() {
+    const show = localStorage.getItem('showRouteIcons') === 'true';
+    localStorage.setItem('showRouteIcons', show ? 'false' : 'true');
+    window._showRouteIcons = !show;
+    const tog = document.getElementById('toggle-route-icons');
+    if (tog) tog.classList.toggle('on', !show);
+    if (typeof renderRouteGrid === 'function' && window._lastRenderedApps) {
+        renderRouteGrid(window._lastRenderedApps);
+        if (typeof filterRoutes === 'function') filterRoutes();
+    }
 }
 
 function _applyTraefikBadgeVisibility() {
@@ -2180,6 +2283,8 @@ function loadUiTogglesIntoModal() {
     if (ep) ep.classList.toggle('on', _uiPref('showEntrypoints'));
     if (cs) cs.classList.toggle('on', localStorage.getItem('compactStatCards') === 'true');
     if (sh) sh.classList.toggle('on', localStorage.getItem('showShortcutsBtn') !== 'false');
+    const ri = document.getElementById('toggle-route-icons');
+    if (ri) ri.classList.toggle('on', localStorage.getItem('showRouteIcons') === 'true');
 }
 
 function toggleUiPref(key) {
@@ -2702,6 +2807,7 @@ async function openAgentSetup(id, titleOverride) {
             if (a.config_path)        document.getElementById('agCfgConfigPath').value  = a.config_path;
             if (a.static_config_path) document.getElementById('agCfgStaticPath').value  = a.static_config_path;
             if (a.backup_dir)         document.getElementById('agCfgBackupDir').value   = a.backup_dir;
+            if (a.backup_keep_count)  { const el = document.getElementById('agCfgKeepCount'); if (el) el.value = a.backup_keep_count; }
             if (a.acme_json_path)     document.getElementById('agCfgAcmePath').value    = a.acme_json_path;
             if (a.access_log_path)    document.getElementById('agCfgLogPath').value     = a.access_log_path;
             if (a.plugins_dir)        document.getElementById('agCfgPluginsDir').value  = a.plugins_dir;
@@ -2748,6 +2854,7 @@ function resetAgentWizardCfgFields() {
     document.getElementById('agCfgConfigPath').value  = '/app/config';
     document.getElementById('agCfgStaticPath').value  = '';
     document.getElementById('agCfgBackupDir').value   = '';
+    { const el = document.getElementById('agCfgKeepCount'); if (el) el.value = ''; }
     document.getElementById('agCfgAcmePath').value    = '';
     document.getElementById('agCfgLogPath').value     = '';
     document.getElementById('agCfgPluginsDir').value  = '';
@@ -2901,6 +3008,7 @@ function buildAgentCfgPayload() {
         config_path:        document.getElementById('agCfgConfigPath').value.trim(),
         static_config_path: document.getElementById('agCfgStaticPath').value.trim(),
         backup_dir:         document.getElementById('agCfgBackupDir').value.trim(),
+        backup_keep_count:  document.getElementById('agCfgKeepCount')?.value.trim() || '',
         acme_json_path:     document.getElementById('agCfgAcmePath').value.trim(),
         access_log_path:    document.getElementById('agCfgLogPath').value.trim(),
         plugins_dir:        document.getElementById('agCfgPluginsDir').value.trim(),
@@ -2951,6 +3059,7 @@ function agentCfgChanged() {
     const insecureTLS = document.getElementById('agCfgInsecureTLS')?.classList.contains('on');
     const agentPort   = document.getElementById('agCfgPort')?.value.trim() || '8090';
     const rateLimit   = document.getElementById('agCfgRateLimit')?.value.trim();
+    const keepCount   = document.getElementById('agCfgKeepCount')?.value.trim();
     const envLines = [`      - TMA_API_KEY=${key}`, `      - TRAEFIK_API_URL=${traefik}`, `      - CONFIG_PATH=${configPath}`];
     if (agentPort !== '8090') envLines.push(`      - TMA_PORT=${agentPort}`);
     if (rateLimit && rateLimit !== '300') envLines.push(`      - TMA_RATE_LIMIT=${rateLimit}`);
@@ -2964,6 +3073,7 @@ function agentCfgChanged() {
     if (logPath)     envLines.push(`      - ACCESS_LOG_PATH=${logPath}`);
     if (pluginsDir)  envLines.push(`      - PLUGINS_DIR=${pluginsDir}`);
     if (backupDir)   envLines.push(`      - BACKUP_DIR=${backupDir}`);
+    if (keepCount && keepCount !== '0') envLines.push(`      - BACKUP_KEEP_COUNT=${keepCount}`);
     if (csUrl)       envLines.push(`      - CROWDSEC_LAPI_URL=${csUrl}`);
     if (csKey)       envLines.push(`      - CROWDSEC_API_KEY=${csKey}`);
     if (csMid)       envLines.push(`      - CROWDSEC_MACHINE_ID=${csMid}`);

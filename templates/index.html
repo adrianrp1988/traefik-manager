@@ -465,6 +465,8 @@ function switchServer(agentId) {
     _activeAgent = agent;
     _cachedEntrypoints = null;
     _cachedMiddlewares = null;
+    _cachedCertResolvers = null;
+    _customDomains = [];
     if (agent) document.getElementById('selfRouteEpWarning')?.remove();
     if (typeof window.rmInvalidateData === 'function') window.rmInvalidateData();
     if (agent) {
@@ -878,9 +880,9 @@ function openModal() {
     _initMiddlewareChips([]);
     setTcpTlsMode('none', document.getElementById('tcpTlsNone'));
     const crHttp = document.getElementById('certResolver');
-    if (crHttp) { crHttp.value = availableCertResolvers.length > 0 ? availableCertResolvers[0] : '__disabled__'; toggleWildcardSection(crHttp.value); }
+    if (crHttp) { crHttp.value = (!_activeAgent && availableCertResolvers.length > 0) ? availableCertResolvers[0] : '__disabled__'; toggleWildcardSection(crHttp.value); }
     const crTcp = document.getElementById('certResolverTcp');
-    if (crTcp && availableCertResolvers.length > 0) crTcp.value = availableCertResolvers[0];
+    if (crTcp) crTcp.value = (!_activeAgent && availableCertResolvers.length > 0) ? availableCertResolvers[0] : '__disabled__';
     const wcChk = document.getElementById('wildcardCheckbox'); if (wcChk) wcChk.checked = false;
     const mainEl = document.getElementById('tlsWildcardMain'); if (mainEl) mainEl.value = '';
     const sansEl = document.getElementById('tlsWildcardSans'); if (sansEl) sansEl.value = '';
@@ -889,11 +891,11 @@ function openModal() {
     if (tlsOptSel) tlsOptSel.value = '';
     _populateTlsOptionsSelect();
     _updateRouteModalForAgent();
-    const _omAgDoms = _activeAgent ? (_activeAgent.domains || []) : [];
-    if (_activeAgent && _omAgDoms.length > 1) { _initAgentDomainChips(_omAgDoms, []); } else { _initDomainChips([]); }
+    _initDomainChips([]);
     _populateConfigFileSelect('route').then(() => {
         document.getElementById('appModal').style.display = 'flex';
     });
+    _loadAgentResolversIntoSelects();
 }
 
 function closeModal() { document.getElementById('appModal').style.display = 'none'; }
@@ -1183,36 +1185,20 @@ function _updateRouteModalForAgent(rebuildBody) {
     const domBody    = document.getElementById('routeDomainBody');
     const subLabel   = document.getElementById('routeSubdomainLabel');
     const subInput   = document.getElementById('subdomain');
-    const agentDomains = _activeAgent ? (_activeAgent.domains || []) : [];
-    if (_activeAgent && agentDomains.length === 0) {
+    const list = _domainsForForm();
+    if (_activeAgent && list.length === 0) {
         if (domainCol) domainCol.style.display = 'none';
         if (subLabel) subLabel.textContent = 'Hostname';
         if (subInput) subInput.placeholder = 'app.example.com';
-    } else if (_activeAgent && agentDomains.length > 0) {
-        if (domainCol) domainCol.style.display = '';
-        if (subLabel) subLabel.textContent = 'Subdomain';
-        if (subInput) subInput.placeholder = 'app';
-        if (domLabel) domLabel.textContent = agentDomains.length > 1 ? 'Domains' : 'Domain';
-        if (rebuildBody !== false && domBody) {
-            if (agentDomains.length > 1) {
-                domBody.innerHTML = `<div id="domainChips" class="flex flex-wrap gap-1.5 p-2 rounded-lg" style="background:var(--input-bg);border:1px solid var(--border);min-height:38px"></div><div id="domainHiddenInputs"></div>`;
-            } else {
-                domBody.innerHTML = `<select name="domains" id="domainSelect" class="input-field"><option value="${_esc(agentDomains[0])}">${_esc(agentDomains[0])}</option></select>`;
-            }
-        }
     } else {
         if (domainCol) domainCol.style.display = '';
         if (subLabel) subLabel.textContent = 'Subdomain';
         if (subInput) subInput.placeholder = 'app';
-        if (domLabel) domLabel.textContent = availableDomains.length > 1 ? 'Domains' : 'Domain';
+        if (domLabel) domLabel.textContent = list.length > 1 ? 'Domains' : 'Domain';
         if (rebuildBody !== false && domBody) {
-            if (availableDomains.length > 1) {
+            if (list.length >= 1) {
                 if (!document.getElementById('domainChips')) {
                     domBody.innerHTML = `<div id="domainChips" class="flex flex-wrap gap-1.5 p-2 rounded-lg" style="background:var(--input-bg);border:1px solid var(--border);min-height:38px"></div><div id="domainHiddenInputs"></div>`;
-                }
-            } else if (availableDomains.length === 1) {
-                if (!document.getElementById('domainSelect')) {
-                    domBody.innerHTML = `<select name="domains" id="domainSelect" class="input-field"><option value="${_esc(availableDomains[0])}">${_esc(availableDomains[0])}</option></select>`;
                 }
             } else {
                 domBody.innerHTML = '';
@@ -1613,8 +1599,53 @@ async function deleteSelfRoute() {
     await saveSelfRoute();
 }
 
+window._showRouteIcons = localStorage.getItem('showRouteIcons') === 'true';
+const _ROUTE_ICON_CDN = 'https://cdn.jsdelivr.net/gh/selfhst/icons/png';
+
+function _routeIconSlug(app) {
+    let s = (app.service_name || app.name || '').split('@')[0];
+    s = s.replace(/:\d+$/, '').replace(/[-_](?:service|svc|router|app|container|pod)s?$/i, '');
+    return s.toLowerCase().replace(/[^a-z0-9-]/g, '');
+}
+
+function _routeIconUrl(app) {
+    const cfg = (typeof _rmConfig !== 'undefined' && _rmConfig) ? _rmConfig : {};
+    const ov  = (cfg.route_overrides || {})[app.id] || {};
+    if (ov.icon_type === 'url'  && ov.icon_url)  return ov.icon_url;
+    if (ov.icon_type === 'slug' && ov.icon_slug) return `${_ROUTE_ICON_CDN}/${ov.icon_slug}.png`;
+    const tmName = (cfg.tm_route_name || 'traefik-manager').toLowerCase();
+    if ((app.name || '').toLowerCase() === tmName) return '/static/icons/icon.png';
+    const s = _routeIconSlug(app);
+    return s ? `${_ROUTE_ICON_CDN}/${s}.png` : '';
+}
+
+async function _ensureRouteIconConfig() {
+    if (window._routeIconCfgLoaded) return;
+    window._routeIconCfgLoaded = true;
+    if (typeof _rmDataLoaded !== 'undefined' && _rmDataLoaded) return;
+    try {
+        const r = await fetch('/api/dashboard/config');
+        const c = await r.json();
+        if (c && typeof c === 'object' && typeof _rmConfig !== 'undefined') _rmConfig = c;
+    } catch (_) {}
+}
+
+function _routeIconHtml(app) {
+    if (!window._showRouteIcons) return '';
+    const url = _routeIconUrl(app);
+    if (!url) return '';
+    const slug = _routeIconSlug(app);
+    return `<img src="${url}" data-slug="${slug}" onerror="window.rmIconFallback(this)" alt="" class="route-app-icon" style="width:18px;height:18px;border-radius:4px;object-fit:contain;flex-shrink:0">`;
+}
+
 function renderRouteGrid(apps) {
     window._lastRenderedApps = apps;
+    if (window._showRouteIcons && !window._routeIconCfgLoaded) {
+        _ensureRouteIconConfig().then(() => {
+            renderRouteGrid(window._lastRenderedApps || apps);
+            if (typeof filterRoutes === 'function') filterRoutes();
+        });
+    }
     if (_activeAgent) apps = apps.filter(a => !a.provider || a.provider === 'file');
     const countEl = document.getElementById('countRoutes');
     if (countEl) countEl.textContent = apps.filter(a => (!a.provider || a.provider === 'file') && a.enabled !== false).length;
@@ -1649,6 +1680,7 @@ function renderRouteGrid(apps) {
         const enabled = app.enabled !== false;
         const isFileRoute = !app.provider || app.provider === 'file';
         const appJson = JSON.stringify(app).replace(/'/g, '&#39;');
+        const iconHtml = _routeIconHtml(app);
         const toggleIcon = enabled ? 'ph-toggle-right' : 'ph-toggle-left';
         const toggleTitle = enabled ? 'Disable route' : 'Enable route';
         const toggleBtn = isFileRoute ? `<button type="button" onclick="toggleRoute('${_esc(app.id)}',${enabled})" class="pill-btn ${enabled ? 'pill-btn-green' : 'pill-btn-muted'}" title="${toggleTitle}"><i class="ph-bold ${toggleIcon} text-sm"></i></button>` : '';
@@ -1673,9 +1705,9 @@ function renderRouteGrid(apps) {
         if (_routeViewMode === 'list') {
             const epCompact = (app.entryPoints || []).slice(0, 2).map(ep => `<span class="badge badge-muted" style="font-size:9px">${_esc(ep)}</span>`).join('');
             const mwCompact = (app.middlewares || []).map(mw => `<span class="badge" style="font-size:9px;background:rgba(163,113,247,0.1);color:var(--purple);border:1px solid rgba(163,113,247,0.25)">${_esc(mw)}</span>`).join('');
-            return `<div class="svc-list-row route-list-grid route-card${enabled ? '' : ' opacity-50'}" style="${bulkOutline}" ${dataAttrs}><div class="svc-list-col-status" style="display:flex;align-items:center;gap:6px">${bulkCheckbox}<span class="svc-status-dot" style="background:${enabled ? 'var(--green)' : 'var(--muted)'}"></span></div><div style="display:flex;align-items:center;gap:4px"><span class="badge ${badgeClass}" style="font-size:9px">${proto.toUpperCase()}</span>${tlsBadge}${insecureBadge}${tlsProfileBadge}</div><div class="svc-list-col-name">${_esc(app.name)}<div class="text-xs font-mono truncate" style="color:var(--muted);margin-top:1px">${_esc(app.service_name)}</div></div><div style="display:flex;flex-wrap:wrap;gap:2px;align-items:center">${listDomainDisplay}</div><div style="display:flex;align-items:center;gap:4px"><div class="text-xs font-mono truncate" style="color:var(--green)">${_esc(app.target)}</div><button onclick="event.stopPropagation();_copyToClipboard('${_esc(app.target)}')" title="Copy" style="background:none;border:none;cursor:pointer;padding:2px;color:var(--muted);flex-shrink:0;line-height:1;border-radius:3px" onmouseover="this.style.color='var(--green)'" onmouseout="this.style.color='var(--muted)'"><svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 256 256" fill="currentColor"><path d="M216,32H88a8,8,0,0,0-8,8V80H40a8,8,0,0,0-8,8V216a8,8,0,0,0,8,8H168a8,8,0,0,0,8-8V176h40a8,8,0,0,0,8-8V40A8,8,0,0,0,216,32Zm-56,176H48V96H160Zm48-48H176V88a8,8,0,0,0-8-8H96V48H208Z"/></svg></button></div><div style="display:flex;flex-wrap:wrap;align-items:center;gap:3px">${epCompact}</div><div style="display:flex;flex-wrap:wrap;align-items:center;gap:3px">${mwCompact}</div><div class="flex items-center gap-1 flex-shrink-0" onclick="event.stopPropagation()"><button type="button" data-app='${appJson}' data-openurl="${openUrl}" onclick="event.stopPropagation();_openRouteMenu(event,this)" class="pill-btn pill-btn-blue" title="More"><i class="ph-bold ph-dots-three text-sm"></i></button><button type="button" data-app='${appJson}' onclick="handleEdit(this)" class="pill-btn pill-btn-blue" title="Edit"><i class="ph-bold ph-pencil-simple text-sm"></i></button>${toggleBtn}</div></div>`;
+            return `<div class="svc-list-row route-list-grid route-card${enabled ? '' : ' opacity-50'}" style="${bulkOutline}" ${dataAttrs}><div class="svc-list-col-status" style="display:flex;align-items:center;gap:6px">${bulkCheckbox}<span class="svc-status-dot" style="background:${enabled ? 'var(--green)' : 'var(--muted)'}"></span></div><div style="display:flex;align-items:center;gap:4px"><span class="badge ${badgeClass}" style="font-size:9px">${proto.toUpperCase()}</span>${tlsBadge}${insecureBadge}${tlsProfileBadge}</div><div class="svc-list-col-name"><div style="display:flex;align-items:center;gap:5px">${iconHtml}<span class="truncate">${_esc(app.name)}</span></div><div class="text-xs font-mono truncate" style="color:var(--muted);margin-top:1px">${_esc(app.service_name)}</div></div><div style="display:flex;flex-wrap:wrap;gap:2px;align-items:center">${listDomainDisplay}</div><div style="display:flex;align-items:center;gap:4px"><div class="text-xs font-mono truncate" style="color:var(--green)">${_esc(app.target)}</div><button onclick="event.stopPropagation();_copyToClipboard('${_esc(app.target)}')" title="Copy" style="background:none;border:none;cursor:pointer;padding:2px;color:var(--muted);flex-shrink:0;line-height:1;border-radius:3px" onmouseover="this.style.color='var(--green)'" onmouseout="this.style.color='var(--muted)'"><svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 256 256" fill="currentColor"><path d="M216,32H88a8,8,0,0,0-8,8V80H40a8,8,0,0,0-8,8V216a8,8,0,0,0,8,8H168a8,8,0,0,0,8-8V176h40a8,8,0,0,0,8-8V40A8,8,0,0,0,216,32Zm-56,176H48V96H160Zm48-48H176V88a8,8,0,0,0-8-8H96V48H208Z"/></svg></button></div><div style="display:flex;flex-wrap:wrap;align-items:center;gap:3px">${epCompact}</div><div style="display:flex;flex-wrap:wrap;align-items:center;gap:3px">${mwCompact}</div><div class="flex items-center gap-1 flex-shrink-0" onclick="event.stopPropagation()"><button type="button" data-app='${appJson}' data-openurl="${openUrl}" onclick="event.stopPropagation();_openRouteMenu(event,this)" class="pill-btn pill-btn-blue" title="More"><i class="ph-bold ph-dots-three text-sm"></i></button><button type="button" data-app='${appJson}' onclick="handleEdit(this)" class="pill-btn pill-btn-blue" title="Edit"><i class="ph-bold ph-pencil-simple text-sm"></i></button>${toggleBtn}</div></div>`;
         }
-        return `<div class="card route-card${enabled ? '' : ' opacity-50'}" style="${bulkOutline}" ${dataAttrs}><div class="route-card-inner p-4 pb-2"><div class="flex justify-between items-start mb-3"><div class="flex-1 min-w-0"><div class="flex items-center gap-2 mb-0.5">${bulkCheckbox}<span class="badge ${badgeClass}">${proto.toUpperCase()}</span>${tlsBadge}${insecureBadge}${tlsProfileBadge}<span class="status-dot status-checking" title="Checking..."></span></div><h3 class="font-bold text-sm mt-1.5 truncate transition-colors" style="color:var(--text)">${_esc(app.name)}</h3><div class="text-xs font-mono truncate" style="color:var(--muted)">${_esc(app.service_name)}</div></div><div class="flex items-center gap-1.5 ml-2 flex-shrink-0" onclick="event.stopPropagation()"><button type="button" data-app='${appJson}' data-openurl="${openUrl}" onclick="event.stopPropagation();_openRouteMenu(event,this)" class="pill-btn pill-btn-blue" title="More"><i class="ph-bold ph-dots-three text-sm"></i></button><button type="button" data-app='${appJson}' onclick="handleEdit(this)" class="pill-btn pill-btn-blue" title="Edit"><i class="ph-bold ph-pencil-simple text-sm"></i></button>${toggleBtn}</div></div><div class="space-y-2">${proto === 'http' ? httpBody : tcpBody}</div>${cfBadge}</div></div>`;
+        return `<div class="card route-card${enabled ? '' : ' opacity-50'}" style="${bulkOutline}" ${dataAttrs}><div class="route-card-inner p-4 pb-2"><div class="flex justify-between items-start mb-3"><div class="flex-1 min-w-0"><div class="flex items-center gap-2 mb-0.5">${bulkCheckbox}<span class="badge ${badgeClass}">${proto.toUpperCase()}</span>${tlsBadge}${insecureBadge}${tlsProfileBadge}<span class="status-dot status-checking" title="Checking..."></span></div><div class="flex items-center gap-1.5 mt-1.5">${iconHtml}<h3 class="font-bold text-sm truncate transition-colors" style="color:var(--text)">${_esc(app.name)}</h3></div><div class="text-xs font-mono truncate" style="color:var(--muted)">${_esc(app.service_name)}</div></div><div class="flex items-center gap-1.5 ml-2 flex-shrink-0" onclick="event.stopPropagation()"><button type="button" data-app='${appJson}' data-openurl="${openUrl}" onclick="event.stopPropagation();_openRouteMenu(event,this)" class="pill-btn pill-btn-blue" title="More"><i class="ph-bold ph-dots-three text-sm"></i></button><button type="button" data-app='${appJson}' onclick="handleEdit(this)" class="pill-btn pill-btn-blue" title="Edit"><i class="ph-bold ph-pencil-simple text-sm"></i></button>${toggleBtn}</div></div><div class="space-y-2">${proto === 'http' ? httpBody : tcpBody}</div>${cfBadge}</div></div>`;
     }).join('');
 
     if (_routeViewMode === 'list') {
@@ -1736,7 +1768,44 @@ function _onBackdropClick(e, fn) {
 const availableDomains = {{ domains | tojson | safe }};
 const availableCertResolvers = {{ cert_resolvers | tojson | safe }};
 
+function _ensureResolverOption(sel, value) {
+    if (!sel || !value) return;
+    if (![...sel.options].some(o => o.value === value)) {
+        const opt = document.createElement('option');
+        opt.value = value;
+        opt.textContent = value;
+        const noneOpt = [...sel.options].find(o => o.value === '__none__');
+        sel.insertBefore(opt, noneOpt || null);
+    }
+    sel.value = value;
+}
+
 let _cachedEntrypoints = null;
+let _cachedCertResolvers = null;
+
+async function _loadAgentResolversIntoSelects() {
+    if (!_activeAgent) return;
+    if (_cachedCertResolvers === null) {
+        try {
+            const res = await fetch('/api/agents/' + _activeAgent.id + '/cert-resolvers');
+            _cachedCertResolvers = (await res.json()).resolvers || [];
+        } catch (e) { _cachedCertResolvers = []; }
+    }
+    const list = _cachedCertResolvers;
+    ['certResolver', 'certResolverTcp'].forEach(id => {
+        const sel = document.getElementById(id);
+        if (!sel) return;
+        const cur = sel.value;
+        sel.innerHTML = '';
+        sel.add(new Option('No TLS', '__disabled__'));
+        list.forEach(r => sel.add(new Option(r, r)));
+        sel.add(new Option('None (external / custom cert)', '__none__'));
+        if (cur) _ensureResolverOption(sel, cur);
+        else sel.value = '__disabled__';
+    });
+    const crHttp = document.getElementById('certResolver');
+    if (crHttp) toggleWildcardSection(crHttp.value);
+}
 
 function _copyToClipboard(text) {
     navigator.clipboard.writeText(text).then(() => {
@@ -1749,17 +1818,44 @@ function _copyToClipboard(text) {
     }).catch(() => {});
 }
 
+let _customDomains = [];
+
+function _derivedDomains() {
+    const apps = window._lastRenderedApps || (typeof APP_DATA !== 'undefined' ? APP_DATA : []) || [];
+    const out = new Set();
+    apps.forEach(a => {
+        [...(a.rule || '').matchAll(/Host(?:SNI)?\(`([^`]+)`\)/g)].forEach(m => {
+            const h = m[1].toLowerCase().trim();
+            if (!h || h.includes('*') || h.includes('{')) return;
+            const parts = h.split('.').filter(Boolean);
+            if (parts.length >= 3) out.add(parts.slice(1).join('.'));
+            else if (parts.length === 2) out.add(h);
+        });
+    });
+    return [...out];
+}
+
+function _domainsForForm() {
+    const base = _activeAgent ? (_activeAgent.domains || []) : availableDomains;
+    const merged = [...base];
+    [..._derivedDomains(), ..._customDomains].forEach(d => { if (!merged.includes(d)) merged.push(d); });
+    return merged;
+}
+
 function _initDomainChips(selectedDomains) {
     const container = document.getElementById('domainChips');
     const hiddenContainer = document.getElementById('domainHiddenInputs');
     if (!container || !hiddenContainer) return;
-    let selected = new Set(selectedDomains && selectedDomains.length ? selectedDomains : (availableDomains.length === 1 ? [availableDomains[0]] : []));
+    const conf = _activeAgent ? (_activeAgent.domains || []) : availableDomains;
+    const initialList = _domainsForForm();
+    let selected = new Set(selectedDomains && selectedDomains.length ? selectedDomains : (conf.length === 1 ? [conf[0]] : (initialList.length === 1 ? [initialList[0]] : [])));
     function render() {
+        const list = _domainsForForm();
         hiddenContainer.innerHTML = [...selected].map(d => `<input type="hidden" name="domains" value="${_esc(d)}">`).join('');
-        container.innerHTML = availableDomains.map(d => {
+        container.innerHTML = list.map(d => {
             const on = selected.has(d);
             return `<button type="button" onclick="_toggleDomainChip(this,'${_esc(d)}')" style="padding:3px 10px;border-radius:9999px;border:1px solid ${on ? 'var(--blue)' : 'var(--border)'};background:${on ? 'rgba(59,130,246,0.15)' : 'transparent'};color:${on ? 'var(--blue)' : 'var(--muted)'};font-size:12px;font-family:monospace;cursor:pointer;white-space:nowrap;max-width:200px;overflow:hidden;text-overflow:ellipsis" title="${_esc(d)}">${_esc(d)}</button>`;
-        }).join('');
+        }).join('') + `<button type="button" onclick="_customDomainPrompt(this)" style="padding:3px 10px;border-radius:9999px;border:1px dashed var(--border);background:transparent;color:var(--muted);font-size:12px;cursor:pointer;white-space:nowrap" title="Add another domain"><i class="ph-bold ph-plus" style="font-size:10px"></i></button>`;
     }
     render();
     window._domainChipSelected = selected;
@@ -1774,21 +1870,30 @@ function _toggleDomainChip(btn, domain) {
     window._domainChipRender();
 }
 
+function _customDomainPrompt(btn) {
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.placeholder = 'other.com';
+    input.style.cssText = 'padding:3px 10px;border-radius:9999px;border:1px solid var(--blue);background:transparent;color:var(--text);font-size:12px;font-family:monospace;width:150px;outline:none';
+    btn.replaceWith(input);
+    input.focus();
+    const commit = () => {
+        const v = input.value.trim().toLowerCase();
+        if (v && /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/.test(v)) {
+            if (!_customDomains.includes(v)) _customDomains.push(v);
+            if (window._domainChipSelected) window._domainChipSelected.add(v);
+        }
+        if (window._domainChipRender) window._domainChipRender();
+    };
+    input.addEventListener('keydown', e => {
+        if (e.key === 'Enter') { e.preventDefault(); commit(); }
+        else if (e.key === 'Escape') { if (window._domainChipRender) window._domainChipRender(); }
+    });
+    input.addEventListener('blur', () => { if (input.isConnected) commit(); });
+}
+
 function _initAgentDomainChips(domains, selectedDomains) {
-    const container = document.getElementById('domainChips');
-    const hiddenContainer = document.getElementById('domainHiddenInputs');
-    if (!container || !hiddenContainer) return;
-    let selected = new Set(selectedDomains && selectedDomains.length ? selectedDomains : (domains.length === 1 ? [domains[0]] : []));
-    function render() {
-        hiddenContainer.innerHTML = [...selected].map(d => `<input type="hidden" name="domains" value="${_esc(d)}">`).join('');
-        container.innerHTML = domains.map(d => {
-            const on = selected.has(d);
-            return `<button type="button" onclick="_toggleDomainChip(this,'${_esc(d)}')" style="padding:3px 10px;border-radius:9999px;border:1px solid ${on ? 'var(--blue)' : 'var(--border)'};background:${on ? 'rgba(59,130,246,0.15)' : 'transparent'};color:${on ? 'var(--blue)' : 'var(--muted)'};font-size:12px;font-family:monospace;cursor:pointer;white-space:nowrap;max-width:200px;overflow:hidden;text-overflow:ellipsis" title="${_esc(d)}">${_esc(d)}</button>`;
-        }).join('');
-    }
-    render();
-    window._domainChipSelected = selected;
-    window._domainChipRender = render;
+    _initDomainChips(selectedDomains);
 }
 
 async function _initEntrypointChips(proto, selectedEntrypoints) {
@@ -1975,7 +2080,7 @@ async function cloneRoute(btn) {
         const crHttp = document.getElementById('certResolver');
         if (crHttp) {
             if (!app.tls && app.tls !== false) crHttp.value = '__disabled__';
-            else if (app.certResolver) crHttp.value = app.certResolver;
+            else if (app.certResolver) _ensureResolverOption(crHttp, app.certResolver);
             else crHttp.value = '__none__';
             toggleWildcardSection(crHttp.value);
         }
@@ -2006,7 +2111,7 @@ async function cloneRoute(btn) {
         const tlsMode = app.tls ? (app.tls.passthrough ? 'passthrough' : 'tls') : 'none';
         setTcpTlsMode(tlsMode, document.getElementById(tlsMode === 'passthrough' ? 'tcpTlsPassthrough' : tlsMode === 'tls' ? 'tcpTlsTls' : 'tcpTlsNone'));
         const crTcp = document.getElementById('certResolverTcp');
-        if (crTcp && app.certResolver) crTcp.value = app.certResolver;
+        if (crTcp && app.certResolver) _ensureResolverOption(crTcp, app.certResolver);
     } else if (proto === 'udp') {
         const target = (app.target || '').split(':');
         document.getElementById('targetIpUdp').value = target[0] || '';
@@ -2077,8 +2182,7 @@ async function handleEdit(btn) {
             setHttpRuleMode('simple');
         }
         _updateRouteModalForAgent();
-        const _heAgDoms = _activeAgent ? (_activeAgent.domains || []) : [];
-        const domainsForMatch = (_activeAgent && _heAgDoms.length > 0) ? _heAgDoms : availableDomains;
+        const domainsForMatch = _domainsForForm();
         let subdomain = '';
         const hostMatches = [...rule.matchAll(/Host\(`([^`]+)`\)/g)].map(m => m[1]);
         const matchedDomains = [];
@@ -2091,10 +2195,8 @@ async function handleEdit(btn) {
             if (!found && !subdomain) subdomain = fullHost;
         }
         document.getElementById('subdomain').value = subdomain;
-        if (_activeAgent && _heAgDoms.length > 1 && document.getElementById('domainChips')) {
-            _initAgentDomainChips(_heAgDoms, matchedDomains.length ? matchedDomains : []);
-        } else if (document.getElementById('domainChips')) {
-            _initDomainChips(matchedDomains.length ? matchedDomains : (availableDomains.length === 1 ? [availableDomains[0]] : []));
+        if (document.getElementById('domainChips')) {
+            _initDomainChips(matchedDomains.length ? matchedDomains : []);
         } else {
             const sel = document.getElementById('domainSelect');
             if (sel && matchedDomains.length > 0) sel.value = matchedDomains[0];
@@ -2112,7 +2214,7 @@ async function handleEdit(btn) {
         const crHttp = document.getElementById('certResolver');
         if (crHttp) {
             if (!app.tls && app.tls !== false) crHttp.value = '__disabled__';
-            else if (app.certResolver) crHttp.value = app.certResolver;
+            else if (app.certResolver) _ensureResolverOption(crHttp, app.certResolver);
             else crHttp.value = '__none__';
             toggleWildcardSection(crHttp.value);
         }
@@ -2145,7 +2247,7 @@ async function handleEdit(btn) {
         const tlsMode2 = app.tls ? (app.tls.passthrough ? 'passthrough' : 'tls') : 'none';
         setTcpTlsMode(tlsMode2, document.getElementById(tlsMode2 === 'passthrough' ? 'tcpTlsPassthrough' : tlsMode2 === 'tls' ? 'tcpTlsTls' : 'tcpTlsNone'));
         const crTcp = document.getElementById('certResolverTcp');
-        if (crTcp && app.certResolver) crTcp.value = app.certResolver;
+        if (crTcp && app.certResolver) _ensureResolverOption(crTcp, app.certResolver);
 
     } else if (proto === 'udp') {
         const target = (app.target || '').split(':');
@@ -2160,6 +2262,7 @@ async function handleEdit(btn) {
         if (cfSel) cfSel.value = app.configFile;
         document.getElementById('configFile').value = app.configFile;
     }
+    await _loadAgentResolversIntoSelects();
     document.getElementById('appModal').style.display = 'flex';
 }
 

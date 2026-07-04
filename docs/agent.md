@@ -20,7 +20,7 @@ Each agent card in Settings - Agents has four action buttons:
 
 When a remote agent is active:
 
-- **Routes** - The Routes tab shows the agent's routes fetched live from the remote Traefik instance. You can add, edit, delete, and toggle routes exactly as you would locally - changes are written to the agent's config files and a `.bak` backup is created before every write. The Config File selector in the Add/Edit Route modal lists the agent's actual config files (fetched live), not the Host's config files. If the agent has **Domains** configured (Settings - Agents - Traefik tab), the Add/Edit Route modal shows domain chip selectors - the same experience as the Host. Without domains configured, the Subdomain field becomes a free-form **Hostname** field (enter the full hostname, e.g. `app.example.com`). Entrypoints in the route form are fetched live from the agent's Traefik instance.
+- **Routes** - The Routes tab shows the agent's routes fetched live from the remote Traefik instance. You can add, edit, delete, and toggle routes exactly as you would locally - changes are written to the agent's config files and a `.bak` backup is created before every write. The Config File selector in the Add/Edit Route modal lists the agent's actual config files (fetched live), not the Host's config files. If the agent has **Domains** configured (Settings - Agents - Traefik tab) or existing routes to detect domains from, the Add/Edit Route modal shows domain chip selectors - the same experience as the Host, including domains auto-detected from the agent's routes and a **+** chip for ad-hoc entry. Without any domains, the Subdomain field becomes a free-form **Hostname** field (enter the full hostname, e.g. `app.example.com`). Entrypoints in the route form are fetched live from the agent's Traefik instance.
 - **Middlewares** - The Middlewares tab shows only middlewares managed by TM - those in config files under `CONFIG_PATH` with the `@file` provider suffix. Traefik built-in and other provider middlewares are excluded from the badge count and the chip selector. You can add and edit middlewares on the agent exactly as you would locally.
 - **Services** - Shows the agent's services from the remote Traefik API.
 - **Route Map** - The route map diagram renders the agent's routes and services.
@@ -136,6 +136,7 @@ sudo systemctl enable --now tma
 | `ACCESS_LOG_PATH` | - | Path to Traefik access log file |
 | `PLUGINS_DIR` | - | Path to Traefik plugins directory |
 | `BACKUP_DIR` | `/app/backups` | Directory where local `.bak` backup files are stored |
+| `BACKUP_KEEP_COUNT` | `0` | Keep only the last N `.bak` files per config file (0 = keep all) |
 
 ### Traefik restart
 
@@ -220,7 +221,7 @@ sudo ufw allow from <subnet> to any port <crowdsec-port> proto tcp
 
 ### Domains (TM-side, not an env var)
 
-The **Domains** field in Settings - Agents (Traefik tab) is a TM-side configuration - it is not passed to the agent container. It tells TM what domains are available on this agent when creating or editing routes. Enter one or more domains separated by commas (e.g. `example.com, example.net`). When set, the Add/Edit Route modal shows a domain chip selector exactly like the Host. When left blank, the Subdomain field becomes a free-form Hostname field for the full hostname.
+The **Domains** field in Settings - Agents (Traefik tab) is a TM-side configuration - it is not passed to the agent container. It tells TM what domains are available on this agent when creating or editing routes. Enter one or more domains separated by commas (e.g. `example.com, example.net`). Domains found in the agent's existing routes are added to the route form automatically, so this field is optional seeding. When the agent has no configured domains and no routes to detect them from, the Subdomain field becomes a free-form Hostname field for the full hostname.
 
 ## Storage
 

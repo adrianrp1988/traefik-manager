@@ -17,6 +17,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -192,7 +193,7 @@ func (a *App) configsWriteHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	if a.cfg.GitBackupEnabled && a.cfg.GitBackupAutoPush && a.cfg.GitBackupRepo != "" {
 		go func() {
-			if err := a.gitPush("config save"); err != nil {
+			if err := a.gitPush("config save", ""); err != nil {
 				log.Printf("git auto-push failed: %v", err)
 			}
 		}()
@@ -234,6 +235,9 @@ func (a *App) staticWriteHandler(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		jsonError(w, "invalid request body", http.StatusBadRequest)
 		return
+	}
+	if err := a.createFileBak(a.cfg.StaticConfigPath, ""); err != nil {
+		log.Printf("pre-write static backup failed: %v", err)
 	}
 	if err := atomicWrite(a.cfg.StaticConfigPath, []byte(body.Content)); err != nil {
 		jsonError(w, "write failed: "+err.Error(), http.StatusInternalServerError)
@@ -573,7 +577,38 @@ func (a *App) createFileBak(targetPath, name string) error {
 	}
 	ts := time.Now().UTC().Format("20060102_150405")
 	bakName := base + "." + ts + ".bak"
-	return os.WriteFile(filepath.Join(dir, bakName), data, 0o644)
+	if err := os.WriteFile(filepath.Join(dir, bakName), data, 0o644); err != nil {
+		return err
+	}
+	a.pruneBackups(base)
+	return nil
+}
+
+func (a *App) pruneBackups(base string) {
+	keep := a.cfg.BackupKeepCount
+	if keep <= 0 {
+		return
+	}
+	dir := a.backupDir()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	prefix := base + "."
+	var matches []string
+	for _, e := range entries {
+		n := e.Name()
+		if !e.IsDir() && strings.HasPrefix(n, prefix) && strings.HasSuffix(n, ".bak") {
+			matches = append(matches, n)
+		}
+	}
+	if len(matches) <= keep {
+		return
+	}
+	sort.Sort(sort.Reverse(sort.StringSlice(matches)))
+	for _, n := range matches[keep:] {
+		os.Remove(filepath.Join(dir, n))
+	}
 }
 
 func (a *App) backupsListHandler(w http.ResponseWriter, r *http.Request) {
@@ -634,6 +669,7 @@ func (a *App) createBackup() ([]string, error) {
 		name := base + "." + ts + ".bak"
 		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err == nil {
 			names = append(names, name)
+			a.pruneBackups(base)
 		}
 	}
 	cfgPath := a.cfg.ConfigPath
@@ -780,7 +816,7 @@ func (a *App) gitEnsureRepo() (string, error) {
 	return repoDir, nil
 }
 
-func (a *App) gitPush(action string) error {
+func (a *App) gitPush(action string, customMsg string) error {
 	if a.cfg.GitBackupRepo == "" {
 		return fmt.Errorf("no repository configured")
 	}
@@ -823,6 +859,9 @@ func (a *App) gitPush(action string) error {
 
 	ts := time.Now().Format("2006-01-02 15:04:05")
 	msg := strings.NewReplacer("{action}", action, "{timestamp}", ts).Replace(a.cfg.GitBackupCommitMsg)
+	if strings.TrimSpace(customMsg) != "" {
+		msg = strings.TrimSpace(customMsg)
+	}
 
 	a.gitRun([]string{"add", "-A"}, repoDir)
 	_, _, rc := a.gitRun([]string{"diff", "--cached", "--quiet"}, repoDir)
@@ -869,7 +908,11 @@ func (a *App) gitStatusHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) gitPushHandler(w http.ResponseWriter, r *http.Request) {
-	if err := a.gitPush("manual"); err != nil {
+	var body struct {
+		Message string `json:"message"`
+	}
+	json.NewDecoder(r.Body).Decode(&body)
+	if err := a.gitPush("manual", body.Message); err != nil {
 		jsonError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -1334,7 +1377,7 @@ func (a *App) routeRawSaveHandler(w http.ResponseWriter, r *http.Request, routeI
 	}
 	if a.cfg.GitBackupEnabled && a.cfg.GitBackupAutoPush && a.cfg.GitBackupRepo != "" {
 		go func() {
-			if err := a.gitPush("route raw save"); err != nil {
+			if err := a.gitPush("route raw save", ""); err != nil {
 				log.Printf("git auto-push failed: %v", err)
 			}
 		}()

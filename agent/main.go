@@ -9,7 +9,7 @@ import (
 	"strings"
 )
 
-const Version = "1.5.2"
+const Version = "1.6.0"
 
 type Config struct {
 	APIKey                 string
@@ -38,6 +38,7 @@ type Config struct {
 	GitBackupAutoPush  bool
 	GitBackupCommitMsg string
 	BackupDir          string
+	BackupKeepCount    int
 }
 
 type App struct {
@@ -102,6 +103,7 @@ func loadConfig() *Config {
 		GitBackupAutoPush:  envBool("GIT_BACKUP_AUTO_PUSH", true),
 		GitBackupCommitMsg: envOr("GIT_BACKUP_COMMIT_MESSAGE", "traefik-manager: {action} at {timestamp}"),
 		BackupDir:          envOr("BACKUP_DIR", "/app/backups"),
+		BackupKeepCount:    envInt("BACKUP_KEEP_COUNT", 0),
 	}
 }
 

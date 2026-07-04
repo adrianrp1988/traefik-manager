@@ -25,7 +25,7 @@ from io import StringIO
 from cryptography.fernet import Fernet, InvalidToken
 
 GITHUB_REPO  = "chr0nzz/traefik-manager"
-APP_VERSION  = "1.5.2"
+APP_VERSION  = "1.6.0"
 
 
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
@@ -114,6 +114,7 @@ def _parse_agent_dict(a: dict) -> dict:
         'traefik_insecure_skip_verify': bool(a.get('traefik_insecure_skip_verify', False)),
         'config_path':                  str(a.get('config_path', '/app/config')).strip(),
         'backup_dir':                   str(a.get('backup_dir', '')).strip(),
+        'backup_keep_count':            str(a.get('backup_keep_count', '')).strip(),
         'static_config_path':           str(a.get('static_config_path', '')).strip(),
         'acme_json_path':               str(a.get('acme_json_path', '')).strip(),
         'access_log_path':              str(a.get('access_log_path', '')).strip(),
@@ -461,6 +462,7 @@ def load_settings() -> dict:
         'git_backup_auto_push':      True,
         'agents':                    [],
         'agent_api_rate_limit':      int(os.environ.get('AGENT_API_RATE_LIMIT', 30)),
+        'backup_keep_count':         int(os.environ.get('BACKUP_KEEP_COUNT', 0)),
     }
     if not os.path.exists(SETTINGS_PATH):
         return defaults
@@ -602,6 +604,11 @@ def load_settings() -> dict:
                 merged['agent_api_rate_limit'] = max(1, int(data['agent_api_rate_limit']))
             except Exception:
                 pass
+        if 'backup_keep_count' in data:
+            try:
+                merged['backup_keep_count'] = max(0, int(data['backup_keep_count']))
+            except Exception:
+                pass
         return merged
     except Exception as e:
         logger.warning(f"Could not load manager.yml, using defaults: {e}")
@@ -630,7 +637,7 @@ def save_settings(domains, cert_resolver, traefik_api_url,
                   git_backup_branch=None, git_backup_username=None,
                   git_backup_token=None, git_backup_commit_message=None,
                   git_backup_auto_push=None,
-                  agent_api_rate_limit=None):
+                  agent_api_rate_limit=None, backup_keep_count=None):
     if visible_tabs is None:
         visible_tabs = {t: False for t in OPTIONAL_TABS}
     _cur = load_settings()
@@ -706,6 +713,8 @@ def save_settings(domains, cert_resolver, traefik_api_url,
         git_backup_auto_push = _cur.get('git_backup_auto_push', True)
     if agent_api_rate_limit is None:
         agent_api_rate_limit = _cur.get('agent_api_rate_limit', int(os.environ.get('AGENT_API_RATE_LIMIT', 30)))
+    if backup_keep_count is None:
+        backup_keep_count = _cur.get('backup_keep_count', int(os.environ.get('BACKUP_KEEP_COUNT', 0)))
     otp_secret = _encrypt_otp_secret(otp_secret)
     oidc_client_secret_enc = _encrypt_otp_secret(oidc_client_secret) if oidc_client_secret else ''
     os.makedirs(os.path.dirname(SETTINGS_PATH), exist_ok=True)
@@ -760,6 +769,7 @@ def save_settings(domains, cert_resolver, traefik_api_url,
         'git_backup_commit_message': git_backup_commit_message,
         'git_backup_auto_push':      git_backup_auto_push,
         'agent_api_rate_limit':      agent_api_rate_limit,
+        'backup_keep_count':         backup_keep_count,
     })
     with open(tmp, 'w') as f:
         yaml.dump(_doc, f)
@@ -1618,6 +1628,16 @@ def api_apikey_status():
     })
 
 
+if not os.environ.get('REQUESTS_CA_BUNDLE'):
+    _SYSTEM_CA_BUNDLE = '/etc/ssl/certs/ca-certificates.crt'
+    if os.path.exists(_SYSTEM_CA_BUNDLE):
+        os.environ['REQUESTS_CA_BUNDLE'] = _SYSTEM_CA_BUNDLE
+
+def _traefik_verify():
+    if os.environ.get('TRAEFIK_INSECURE_SKIP_VERIFY', '').lower() in ('true', '1', 'yes'):
+        return False
+    return True
+
 def traefik_api_get(path):
     settings = load_settings()
     base_url = settings['traefik_api_url']
@@ -1628,7 +1648,7 @@ def traefik_api_get(path):
     p = settings.get('traefik_api_password', '')
     auth = (u, p) if u and p else None
     try:
-        resp = requests.get(f"{base_url}{path}", timeout=3, auth=auth)
+        resp = requests.get(f"{base_url}{path}", timeout=3, auth=auth, verify=_traefik_verify())
         if resp.status_code == 200:
             return resp.json()
     except Exception as e:
@@ -2015,7 +2035,7 @@ def api_ping():
     auth = (u, p) if u and p else None
     try:
         t0   = _t.monotonic()
-        resp = requests.get(f"{settings['traefik_api_url']}/ping", timeout=3, auth=auth)
+        resp = requests.get(f"{settings['traefik_api_url']}/ping", timeout=3, auth=auth, verify=_traefik_verify())
         ms   = round((_t.monotonic() - t0) * 1000)
         if resp.status_code == 200:
             return jsonify({'ok': True, 'latency_ms': ms})
@@ -2237,13 +2257,21 @@ def api_static_section_update():
                 plugins[name] = {'moduleName': payload.get('moduleName', ''), 'version': payload.get('version', '')}
         elif section == 'api' and action == 'set':
             if payload.get('enabled', True):
-                api_cfg = {}
+                api_cfg = config.get('api')
+                if not isinstance(api_cfg, dict):
+                    api_cfg = {}
                 if not payload.get('dashboard', True):
                     api_cfg['dashboard'] = False
+                elif 'dashboard' in api_cfg:
+                    api_cfg['dashboard'] = True
                 if payload.get('insecure'):
                     api_cfg['insecure'] = True
+                elif 'insecure' in api_cfg:
+                    api_cfg['insecure'] = False
                 if payload.get('debug'):
                     api_cfg['debug'] = True
+                else:
+                    api_cfg.pop('debug', None)
                 config['api'] = api_cfg
             else:
                 config.pop('api', None)
@@ -2332,13 +2360,21 @@ def api_setup_test_connection():
     p = str(data.get('password', '')).strip()
     auth = (u, p) if u and p else None
     try:
-        resp = requests.get(f"{url}/api/version", timeout=4, auth=auth)
+        resp = requests.get(f"{url}/api/version", timeout=4, auth=auth, verify=_traefik_verify())
         if resp.status_code == 200:
             info = resp.json()
             return jsonify({'ok': True, 'version': info.get('Version', '?')})
-        return jsonify({'ok': False, 'error': f'HTTP {resp.status_code}'})
+        if resp.status_code in (401, 403):
+            return jsonify({'ok': False, 'error': f'HTTP {resp.status_code} - check the API username and password'})
+        return jsonify({'ok': False, 'error': f'HTTP {resp.status_code} from {url}/api/version'})
+    except requests.exceptions.SSLError as e:
+        return jsonify({'ok': False, 'error': f'TLS verification failed - the API certificate is not trusted. Mount your CA into /etc/ssl/certs/ca-certificates.crt or set TRAEFIK_INSECURE_SKIP_VERIFY=true. ({str(e)[:120]})'})
+    except requests.exceptions.Timeout:
+        return jsonify({'ok': False, 'error': 'Connection timed out - the API URL may be unreachable from the container'})
+    except requests.exceptions.ConnectionError as e:
+        return jsonify({'ok': False, 'error': f'Connection error - check the URL and network. ({str(e)[:120]})'})
     except Exception as e:
-        return jsonify({'ok': False, 'error': 'Connection failed'})
+        return jsonify({'ok': False, 'error': str(e)[:160]})
 
 
 @app.route('/api/traefik/router/<protocol>/<path:name>')
@@ -2558,6 +2594,32 @@ def ensure_backup_dir():
     if not os.path.exists(BACKUP_DIR):
         os.makedirs(BACKUP_DIR)
 
+def _backup_keep_count() -> int:
+    try:
+        v = load_settings().get('backup_keep_count')
+        if v in (None, ''):
+            v = os.environ.get('BACKUP_KEEP_COUNT', '0')
+        return max(0, int(v))
+    except Exception:
+        return 0
+
+def _prune_backups(base: str):
+    """Keep only the newest N .bak files for a given config file (0 = keep all)."""
+    keep = _backup_keep_count()
+    if keep <= 0:
+        return
+    pat = re.compile(r'^' + re.escape(base) + r'\.(\d{8}_\d{6})\.bak$')
+    matches = sorted(
+        (f for f in os.listdir(BACKUP_DIR) if pat.match(f)),
+        reverse=True,
+    )
+    for f in matches[keep:]:
+        try:
+            os.remove(os.path.join(BACKUP_DIR, f))
+            logger.info(f"Pruned old backup: {f}")
+        except OSError:
+            pass
+
 def create_backup(path=None):
     if path is None:
         path = CONFIG_PATH
@@ -2568,6 +2630,7 @@ def create_backup(path=None):
         dest = os.path.join(BACKUP_DIR, f"{base}.{ts}.bak")
         shutil.copy2(path, dest)
         logger.info(f"Backup created: {dest}")
+        _prune_backups(base)
         return dest
     return None
 
@@ -2650,22 +2713,36 @@ def _git_ensure_repo():
     token    = s.get('git_backup_token', '').strip()
     auth_url = _git_auth_url(repo_url, username, token)
     repo_dir = _git_repo_dir()
-    if not os.path.exists(os.path.join(repo_dir, '.git')):
-        if os.path.exists(repo_dir) and os.listdir(repo_dir):
-            shutil.rmtree(repo_dir)
-            logger.info("Git repo dir was non-empty without .git - cleared for fresh clone")
+
+    def _fresh_clone():
+        if os.path.exists(repo_dir):
+            shutil.rmtree(repo_dir, ignore_errors=True)
         os.makedirs(repo_dir, exist_ok=True)
         _, _, rc = _git_run(['clone', '--branch', branch, auth_url, '.'], cwd=repo_dir)
         if rc != 0:
             _git_run(['init'], cwd=repo_dir)
             _git_run(['remote', 'add', 'origin', auth_url], cwd=repo_dir)
-            _git_run(['config', 'user.email', 'traefik-manager@localhost'], cwd=repo_dir)
-            _git_run(['config', 'user.name', 'Traefik Manager'], cwd=repo_dir)
             _git_run(['pull', 'origin', branch], cwd=repo_dir)
+        _git_run(['config', 'user.email', 'traefik-manager@localhost'], cwd=repo_dir)
+        _git_run(['config', 'user.name', 'Traefik Manager'], cwd=repo_dir)
+
+    # A valid clone has a working .git and a usable origin remote. If either is
+    # missing (corrupt clone, interrupted write, missing remote) re-clone fresh
+    # so the push can never fail with "'origin' does not appear to be a git repository".
+    valid = False
+    if os.path.exists(os.path.join(repo_dir, '.git')):
+        _, _, rc = _git_run(['rev-parse', '--git-dir'])
+        valid = (rc == 0)
+    if not valid:
+        _fresh_clone()
     else:
-        _, _, rc = _git_run(['remote', 'set-url', 'origin', auth_url])
+        _, _, rc = _git_run(['remote', 'get-url', 'origin'])
         if rc != 0:
-            _git_run(['remote', 'add', 'origin', auth_url])
+            _, _, arc = _git_run(['remote', 'add', 'origin', auth_url])
+            if arc != 0:
+                _fresh_clone()
+        else:
+            _git_run(['remote', 'set-url', 'origin', auth_url])
         _git_run(['config', 'user.email', 'traefik-manager@localhost'])
         _git_run(['config', 'user.name', 'Traefik Manager'])
     return repo_dir
@@ -2685,7 +2762,7 @@ def _git_lock():
         finally:
             f.close()
 
-def _git_push_configs(action='backup'):
+def _git_push_configs(action='backup', custom_message=None):
     s = load_settings()
     if not s.get('git_backup_repo', '').strip():
         return False, 'No repository configured'
@@ -2712,7 +2789,10 @@ def _git_push_configs(action='backup'):
         if sp and os.path.exists(sp):
             shutil.copy2(sp, os.path.join(static_dir, os.path.basename(sp)))
         ts  = time.strftime('%Y-%m-%d %H:%M:%S')
-        msg = tmpl.replace('{action}', action).replace('{timestamp}', ts)
+        if custom_message and custom_message.strip():
+            msg = custom_message.strip()
+        else:
+            msg = tmpl.replace('{action}', action).replace('{timestamp}', ts)
         _git_run(['add', '-A'])
         _, _, rc = _git_run(['diff', '--cached', '--quiet'])
         if rc == 0:
@@ -2763,7 +2843,9 @@ def api_git_backup_status():
 @csrf_protect
 @login_required
 def api_git_backup_push():
-    ok, err = _git_push_configs('manual')
+    data    = request.get_json(silent=True) or {}
+    message = str(data.get('message', '')).strip()
+    ok, err = _git_push_configs('manual', custom_message=message or None)
     if ok:
         add_notification('success', 'Git backup pushed')
         return jsonify({'ok': True})
@@ -3167,6 +3249,7 @@ def api_save_settings():
         git_backup_token          = str(data.get('git_backup_token', ''))
         git_backup_commit_message = (str(data['git_backup_commit_message']).strip() or 'traefik-manager: {action} at {timestamp}') if 'git_backup_commit_message' in data else None
         git_backup_auto_push      = bool(data['git_backup_auto_push'])     if 'git_backup_auto_push'      in data else None
+        backup_keep_count         = max(0, int(data['backup_keep_count'])) if str(data.get('backup_keep_count', '')).strip() != '' else None
         existing = load_settings()
         if not webhook_password:
             webhook_password = existing.get('webhook_password', '')
@@ -3201,7 +3284,8 @@ def api_save_settings():
                       git_backup_username=git_backup_username,
                       git_backup_token=git_backup_token,
                       git_backup_commit_message=git_backup_commit_message,
-                      git_backup_auto_push=git_backup_auto_push)
+                      git_backup_auto_push=git_backup_auto_push,
+                      backup_keep_count=backup_keep_count)
         result = load_settings()
         result.pop('password_hash', None)
         result.pop('oidc_client_secret', None)
@@ -3252,13 +3336,21 @@ def api_settings_test_connection():
     auth = (u, p) if u and p else None
     logger.info(f"Connection test to {url!r} by {request.remote_addr}")
     try:
-        resp = requests.get(f"{url}/api/version", timeout=4, auth=auth)
+        resp = requests.get(f"{url}/api/version", timeout=4, auth=auth, verify=_traefik_verify())
         if resp.status_code == 200:
             info = resp.json()
             return jsonify({'ok': True, 'version': info.get('Version', '?')})
-        return jsonify({'ok': False, 'error': f'HTTP {resp.status_code}'})
-    except Exception:
-        return jsonify({'ok': False, 'error': 'Connection failed'})
+        if resp.status_code in (401, 403):
+            return jsonify({'ok': False, 'error': f'HTTP {resp.status_code} - check the API username and password'})
+        return jsonify({'ok': False, 'error': f'HTTP {resp.status_code} from {url}/api/version'})
+    except requests.exceptions.SSLError as e:
+        return jsonify({'ok': False, 'error': f'TLS verification failed - the API certificate is not trusted. Mount your CA into /etc/ssl/certs/ca-certificates.crt or set TRAEFIK_INSECURE_SKIP_VERIFY=true. ({str(e)[:120]})'})
+    except requests.exceptions.Timeout:
+        return jsonify({'ok': False, 'error': 'Connection timed out - the API URL may be unreachable from the container'})
+    except requests.exceptions.ConnectionError as e:
+        return jsonify({'ok': False, 'error': f'Connection error - check the URL and network. ({str(e)[:120]})'})
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)[:160]})
 
 
 @app.route('/api/settings/tabs', methods=['POST'])
@@ -3284,6 +3376,31 @@ def api_save_tabs():
         return jsonify({'success': True, 'visible_tabs': vt})
     except Exception as e:
         logger.exception("Tab settings save error")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/settings/backup-retention', methods=['POST'])
+@csrf_protect
+@login_required
+def api_save_backup_retention():
+    try:
+        data     = request.get_json() or {}
+        keep     = max(0, int(data.get('backup_keep_count', 0)))
+        existing = load_settings()
+        save_settings(
+            domains=existing['domains'],
+            cert_resolver=existing['cert_resolver'],
+            traefik_api_url=existing['traefik_api_url'],
+            auth_enabled=existing['auth_enabled'],
+            password_hash=existing['password_hash'],
+            visible_tabs=existing['visible_tabs'],
+            backup_keep_count=keep,
+        )
+        return jsonify({'success': True, 'backup_keep_count': keep})
+    except (ValueError, TypeError):
+        return jsonify({'error': 'Invalid keep count'}), 400
+    except Exception as e:
+        logger.exception("Backup retention save error")
         return jsonify({'error': str(e)}), 500
 
 
@@ -4083,6 +4200,20 @@ def api_route_raw_save(route_id):
         return jsonify({'ok': False, 'error': str(e)}), 500
 
 
+def _static_cert_resolvers():
+    path = _get_static_config_path()
+    if not path or not os.path.exists(path):
+        return []
+    try:
+        with open(path, 'r') as f:
+            data = _yaml_safe.load(f) or {}
+        resolvers = data.get('certificatesResolvers') or {}
+        if isinstance(resolvers, dict):
+            return [str(k).strip() for k in resolvers if str(k).strip()]
+    except Exception:
+        logger.debug("Failed to read certificatesResolvers from static config", exc_info=True)
+    return []
+
 @app.route('/')
 @login_required
 def index():
@@ -4093,6 +4224,9 @@ def index():
     login_time = session.get('login_time', '')
     config_paths_list = [{'label': os.path.basename(p), 'path': p} for p in CONFIG_PATHS]
     cert_resolvers    = [r.strip() for r in settings['cert_resolver'].split(',') if r.strip()]
+    for r in _static_cert_resolvers():
+        if r not in cert_resolvers:
+            cert_resolvers.append(r)
 
     return render_template('index.html', apps=apps, domains=settings['domains'],
                            middlewares=middlewares, settings=settings,
@@ -4880,6 +5014,26 @@ def api_agent_routes(agent_id):
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/agents/<agent_id>/cert-resolvers')
+@login_required
+def api_agent_cert_resolvers(agent_id):
+    agent = _agent_by_id(agent_id)
+    if not agent:
+        return jsonify({'resolvers': []})
+    try:
+        resp = _agent_request(agent, 'GET', '/api/static')
+        if resp.status_code != 200:
+            return jsonify({'resolvers': []})
+        content   = (resp.json() or {}).get('content', '')
+        data      = _yaml_safe.load(content) or {}
+        resolvers = data.get('certificatesResolvers') or {}
+        if isinstance(resolvers, dict):
+            return jsonify({'resolvers': [str(k).strip() for k in resolvers if str(k).strip()]})
+    except Exception:
+        logger.debug("Failed to read agent cert resolvers", exc_info=True)
+    return jsonify({'resolvers': []})
+
+
 @app.route('/api/agents', methods=['GET'])
 @login_required
 def api_agents_list():
@@ -4906,6 +5060,7 @@ def api_agents_create():
         'created_at': datetime.now(timezone.utc).isoformat(),
         'traefik_api_url':       str(data.get('traefik_api_url', 'http://traefik:8080')).strip(),
         'config_path':           str(data.get('config_path', '/app/config')).strip(),
+        'backup_keep_count':     str(data.get('backup_keep_count', '')).strip(),
         'static_config_path':    str(data.get('static_config_path', '')).strip(),
         'acme_json_path':        str(data.get('acme_json_path', '')).strip(),
         'access_log_path':       str(data.get('access_log_path', '')).strip(),
@@ -4946,7 +5101,7 @@ def api_agents_update(agent_id):
             updatable = [
                 'name', 'url', 'traefik_api_url', 'traefik_insecure_skip_verify',
                 'config_path', 'static_config_path',
-                'acme_json_path', 'access_log_path', 'plugins_dir', 'backup_dir',
+                'acme_json_path', 'access_log_path', 'plugins_dir', 'backup_dir', 'backup_keep_count',
                 'restart_method', 'traefik_container', 'docker_host', 'signal_file_path',
                 'crowdsec_lapi_url', 'crowdsec_machine_id', 'git_backup_enabled', 'git_backup_repo',
                 'git_backup_branch', 'git_backup_username', 'git_backup_auto_push',

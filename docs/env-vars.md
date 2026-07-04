@@ -17,6 +17,8 @@ Variables marked ✅ **override** the corresponding `manager.yml` field on every
 | `TRAEFIK_API_URL` | `http://traefik:8080` | ✅ `traefik_api_url` | Traefik API URL |
 | `TRAEFIK_API_USER` | _(unset)_ | ✅ `traefik_api_user` | Username for Traefik API basic auth |
 | `TRAEFIK_API_PASSWORD` | _(unset)_ | ✅ `traefik_api_password` | Password for Traefik API basic auth (stored encrypted) |
+| `TRAEFIK_INSECURE_SKIP_VERIFY` | `false` | - | Skip TLS certificate verification when calling the Traefik API (for self-signed certs) |
+| `REQUESTS_CA_BUNDLE` | _(system bundle)_ | - | Path to a CA bundle for outbound HTTPS; defaults to `/etc/ssl/certs/ca-certificates.crt` so mounted private CAs are trusted |
 
 ### Authentication
 
@@ -41,6 +43,7 @@ Variables marked ✅ **override** the corresponding `manager.yml` field on every
 | `CONFIG_PATHS` | _(unset)_ | - | Comma-separated list of config file paths |
 | `CONFIG_PATH` | `/app/config/dynamic.yml` | - | Single config file (default) |
 | `BACKUP_DIR` | `/app/backups` | - | Directory for timestamped config backups |
+| `BACKUP_KEEP_COUNT` | `0` | - | Keep only the last N `.bak` files per config file (0 = keep all) |
 | `SETTINGS_PATH` | `/app/config/manager.yml` | - | Path to the TM settings file |
 
 ### Static Config & Restart
@@ -208,7 +211,7 @@ When set, the in-UI password change and `flask reset-password` have no effect. R
 **Default:** `example.com`
 **Overrides:** `domains` in `manager.yml`
 
-Comma-separated list of base domains shown in the Add Route form.
+Comma-separated list of base domains shown in the Add Route form. This is a form convenience only - it does not affect Traefik configuration, TLS, or routing. Domains found in existing routes are added to the form automatically, and the form's **+** chip accepts any other domain, so this list is optional seeding.
 
 :::tabs
 == Docker / Podman
@@ -343,6 +346,26 @@ volumes:
 == Linux (systemd)
 ```ini
 Environment=BACKUP_DIR=/var/lib/traefik-manager/backups
+```
+:::
+
+---
+
+### `BACKUP_KEEP_COUNT`
+
+**Default:** `0` (keep all)
+
+Limits how many timestamped `.bak` files are kept per config file. After each backup, older files beyond this count are pruned automatically. Set to `0` to keep every backup. On the host this can also be set in Settings - Backups; on a remote agent it is set via this environment variable.
+
+:::tabs
+== Docker / Podman
+```yaml
+environment:
+  - BACKUP_KEEP_COUNT=30
+```
+== Linux (systemd)
+```ini
+Environment=BACKUP_KEEP_COUNT=30
 ```
 :::
 

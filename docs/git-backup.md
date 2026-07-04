@@ -56,6 +56,19 @@ If there are no changes since the last push (the files are identical), no commit
 
 ---
 
+## Manual commits with a message
+
+If you prefer a clean, human-readable history over a commit per save, turn **Auto-push on save** off and commit manually:
+
+1. Make your route, middleware, or static config changes.
+2. Open Settings - Backups - Git.
+3. Type a **Commit message** describing the change (optional - leave blank to use the commit message template).
+4. Click **Push Now**.
+
+The message is used for that push only and is then cleared. This works the same way for remote agents when one is active in the [server switcher](agent.md).
+
+---
+
 ## Git History and restore
 
 The **Git History** section shows the last 50 commits. For each commit you can:
