@@ -900,6 +900,25 @@ function openModal() {
 
 function closeModal() { document.getElementById('appModal').style.display = 'none'; }
 
+function setMwProtocol(proto) {
+    const hid = document.getElementById('mwProtocol');
+    if (hid) hid.value = proto;
+    const hbtn = document.getElementById('mwProtoHTTP');
+    const tbtn = document.getElementById('mwProtoTCP');
+    if (hbtn) hbtn.classList.toggle('active-http', proto === 'http');
+    if (tbtn) tbtn.classList.toggle('active-http', proto === 'tcp');
+    const tplWrap = document.getElementById('mwTemplateWrap');
+    if (tplWrap) tplWrap.style.display = proto === 'tcp' ? 'none' : '';
+    const wizBtn = document.getElementById('mwModeWizBtn');
+    if (wizBtn) wizBtn.style.display = proto === 'tcp' ? 'none' : '';
+    if (proto === 'tcp') {
+        const tplSel = document.getElementById('mwTemplate');
+        if (tplSel) tplSel.value = '';
+        setMwMode('yaml');
+        _showMwWizard('');
+    }
+}
+
 function openMwModal() {
     const nameEl = document.getElementById('middlewareName');
     const contentEl = document.getElementById('middlewareContent');
@@ -918,6 +937,9 @@ function openMwModal() {
     _populateConfigFileSelect('mw').then(() => { modal.style.display = 'flex'; });
     const mwTplSel = document.getElementById('mwTemplate');
     if (mwTplSel) mwTplSel.value = '';
+    setMwProtocol('http');
+    const origProtoEl = document.getElementById('originalMwProtocol');
+    if (origProtoEl) origProtoEl.value = '';
     setMwMode('yaml');
     _showMwWizard('');
     _initMwMonaco('');
@@ -1227,6 +1249,7 @@ async function _populateConfigFileSelect(which) {
     const hidEl   = document.getElementById(hidId);
     if (!sel) return;
     if (newInput) { newInput.style.display = 'none'; newInput.value = ''; }
+    const onChange = isRoute ? onRouteConfigFileChange : onMwConfigFileChange;
     if (_activeAgent) {
         if (wrap) wrap.style.display = '';
         try {
@@ -1234,15 +1257,16 @@ async function _populateConfigFileSelect(which) {
             const data = await r.json();
             const files = (data.files || []).map(f => f.name).sort();
             _buildConfigSelectOptions(sel, files, true);
-            if (files.length === 1) { sel.value = files[0]; if (hidEl) hidEl.value = files[0]; }
-            else { sel.value = ''; if (hidEl) hidEl.value = ''; }
+            sel.value = files.length === 1 ? files[0] : '';
+            onChange(sel);
         } catch(e) { console.error('Failed to load agent configs', e); }
     } else {
         const show = MULTI_CONFIG || CONFIG_DIR_SET;
         if (wrap) wrap.style.display = show ? '' : 'none';
         _buildConfigSelectOptions(sel, CONFIG_PATHS_LIST.map(cp => cp.label), CONFIG_DIR_SET);
-        if (sel.options.length > 1) sel.value = sel.options[1].value;
-        if (hidEl) hidEl.value = sel.value && sel.value !== '__new__' ? sel.value : '';
+        const firstFile = [...sel.options].find(o => o.value && o.value !== '__new__');
+        sel.value = firstFile ? firstFile.value : '';
+        onChange(sel);
     }
 }
 
@@ -2277,6 +2301,10 @@ async function handleMwEdit(btn) {
     if (newMwInput) { newMwInput.style.display = 'none'; newMwInput.value = ''; }
     const mwTplSel2 = document.getElementById('mwTemplate');
     if (mwTplSel2) mwTplSel2.value = '';
+    const mwProto = (mw.type || 'http').toLowerCase();
+    setMwProtocol(mwProto);
+    const origProtoEl2 = document.getElementById('originalMwProtocol');
+    if (origProtoEl2) origProtoEl2.value = mwProto;
     setMwMode('yaml');
     _showMwWizard('');
     await _populateConfigFileSelect('mw');

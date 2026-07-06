@@ -4546,6 +4546,12 @@ def save_middleware():
         mw_content      = request.form.get('middlewareContent', '').strip()
         is_edit         = request.form.get('isMwEdit') == 'true'
         original_id     = request.form.get('originalMwId', '')
+        mw_protocol     = request.form.get('mwProtocol', 'http').strip().lower()
+        if mw_protocol not in ('http', 'tcp'):
+            mw_protocol = 'http'
+        original_proto  = request.form.get('originalMwProtocol', '').strip().lower()
+        if original_proto not in ('http', 'tcp'):
+            original_proto = mw_protocol
         config_file_raw = request.form.get('configFile', '').strip()
         agent_id        = request.form.get('agent_id', '').strip()
         agent           = _agent_by_id(agent_id) if agent_id else None
@@ -4574,15 +4580,27 @@ def save_middleware():
                 return jsonify({'ok': False, 'message': 'Middleware content is empty or invalid'}), 400
             flash("Middleware content is empty or invalid", "error")
             return redirect(url_for('index'))
+        if any(k in parsed_mw for k in ('http', 'tcp', 'udp')):
+            msg = 'Paste only the middleware configuration body (e.g. ipAllowList: ...), not a full http:/tcp: config block'
+            if fetch:
+                return jsonify({'ok': False, 'message': msg}), 400
+            flash(msg, "error")
+            return redirect(url_for('index'))
+        if mw_protocol == 'tcp' and not set(parsed_mw.keys()) <= {'ipAllowList', 'ipWhiteList', 'inFlightConn'}:
+            msg = 'TCP middlewares support only ipAllowList and inFlightConn'
+            if fetch:
+                return jsonify({'ok': False, 'message': msg}), 400
+            flash(msg, "error")
+            return redirect(url_for('index'))
         if agent:
             config = _agent_load_configs(agent).get(cfg_filename, {})
         else:
             create_backup(target_path)
             config = load_config(target_path)
-        config.setdefault('http', {}).setdefault('middlewares', {})
-        if is_edit and original_id and original_id != mw_name:
-            config['http']['middlewares'].pop(original_id, None)
-        config['http']['middlewares'][mw_name] = parsed_mw
+        config.setdefault(mw_protocol, {}).setdefault('middlewares', {})
+        if is_edit and original_id and (original_id != mw_name or original_proto != mw_protocol):
+            config.get(original_proto, {}).get('middlewares', {}).pop(original_id, None)
+        config[mw_protocol]['middlewares'][mw_name] = parsed_mw
         if agent:
             _agent_write_config(agent, cfg_filename, config)
         else:
@@ -4617,9 +4635,14 @@ def delete_middleware(mw_name):
             for fname, config in all_configs.items():
                 if config_file_raw and fname != config_file_raw:
                     continue
-                mws = config.get('http', {}).get('middlewares', {})
-                if mw_name in mws:
-                    mws.pop(mw_name, None)
+                found = False
+                for section in ('http', 'tcp'):
+                    mws = config.get(section, {}).get('middlewares', {})
+                    if mw_name in mws:
+                        mws.pop(mw_name, None)
+                        found = True
+                        break
+                if found:
                     _agent_write_config(agent, fname, config)
                     break
         else:
@@ -4629,9 +4652,14 @@ def delete_middleware(mw_name):
                 search_paths = CONFIG_PATHS
             for target_path in search_paths:
                 config = load_config(target_path)
-                mws = config.get('http', {}).get('middlewares', {})
-                if mw_name in mws:
-                    mws.pop(mw_name, None)
+                found = False
+                for section in ('http', 'tcp'):
+                    mws = config.get(section, {}).get('middlewares', {})
+                    if mw_name in mws:
+                        mws.pop(mw_name, None)
+                        found = True
+                        break
+                if found:
                     create_backup(target_path)
                     save_config(_strip_empty_sections(config), target_path)
                     break

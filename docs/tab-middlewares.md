@@ -19,9 +19,12 @@ Click **Add Middleware** in the top bar.
 
 | Field | Description |
 |---|---|
+| Protocol | **HTTP** (default) or **TCP**. TCP middlewares are written to `tcp.middlewares` and support only `ipAllowList` and `inFlightConn` - the template selector and wizard are HTTP-only, so TCP uses the YAML editor. |
 | Name | Unique identifier - referenced in routes as `name@file` |
 | Template | Pick a preset or choose Custom to write raw YAML |
 | Config File | Shown when multiple config files are mounted (`CONFIG_DIR` / `CONFIG_PATHS`). Select an existing file or choose **+ New file...** to type a filename - the file is created automatically in `CONFIG_DIR`. Auto-suggests `middlewares-<name>.yml`. |
+
+Paste only the middleware configuration body (e.g. `ipAllowList: ...`) - a full `http:`/`tcp:` config block is rejected with an error.
 
 ### Wizard mode
 
