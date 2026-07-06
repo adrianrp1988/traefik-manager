@@ -25,7 +25,7 @@ from io import StringIO
 from cryptography.fernet import Fernet, InvalidToken
 
 GITHUB_REPO  = "chr0nzz/traefik-manager"
-APP_VERSION  = "1.6.0"
+APP_VERSION  = "1.6.1"
 
 
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()

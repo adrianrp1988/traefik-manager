@@ -4703,7 +4703,7 @@ async function csUnban(id) {
     if (!confirm(`Delete decision ${id} (unban IP)?`)) return;
     try {
         const res = await agentFetch(`/api/crowdsec/decisions/${id}`, {
-            method: 'DELETE', headers: {'X-CSRFToken': _csrfToken()}
+            method: 'DELETE'
         }).then(r => r.json());
         if (res.ok) { addNotification('success', `Decision ${id} deleted`); refreshCrowdSecTab(); }
         else addNotification('error', res.error || 'Failed to delete decision');
