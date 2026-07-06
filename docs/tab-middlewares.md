@@ -51,6 +51,8 @@ Click the pencil icon on any middleware card.
 
 When creating or editing a route, enter middleware names in the **Middlewares** field as a comma-separated list, e.g. `auth@file, redirect-https@file`. The `@file` suffix tells Traefik the middleware is defined in the file provider.
 
+TCP routes have their own **Middlewares** chip selector in the route form, offering the TCP middlewares defined in your config; HTTP routes only offer HTTP middlewares.
+
 ## How it works
 
 Middleware definitions are written to the dynamic config under `http.middlewares`. When multiple config files are mounted, each middleware card shows a small badge with its source file. traefik-manager reads the live status for each from the Traefik API (`/api/http/middlewares`).

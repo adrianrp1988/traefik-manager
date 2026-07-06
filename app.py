@@ -4285,6 +4285,7 @@ def save_entry():
         cert_resolver     = '' if (cert_resolver_raw in ('__none__', 'none', '__disabled__')) else (cert_resolver_raw or (resolvers[0] if resolvers else ''))
         use_tls_tcp       = request.form.get('useTls') == 'true'
         tls_passthrough   = request.form.get('tlsPassthrough') == 'true'
+        mws_tcp_raw       = request.form.get('middlewaresTcp')
         tcp_cert_raw      = (_all_resolvers[1] if len(_all_resolvers) > 1 else '').strip()
         tcp_cert_resolver = '' if (tcp_cert_raw in ('__none__', 'none')) else (tcp_cert_raw or (resolvers[0] if resolvers else ''))
         config_file_raw = request.form.get('configFile', '').strip()
@@ -4315,6 +4316,17 @@ def save_entry():
         orig_parts = original_id.split('::', 1)
         plain_original_id = orig_parts[1] if len(orig_parts) > 1 else original_id
         orig_cfg_file = orig_parts[0] if len(orig_parts) > 1 else cfg_filename
+
+        _prev_tcp_mws = None
+        if is_edit and plain_original_id:
+            _prev_src = config
+            if orig_cfg_file != cfg_filename:
+                if agent:
+                    _prev_src = _agent_load_configs(agent).get(orig_cfg_file, {})
+                else:
+                    _prev_path = _resolve_config_path(orig_cfg_file)
+                    _prev_src = load_config(_prev_path) if _prev_path else {}
+            _prev_tcp_mws = _prev_src.get('tcp', {}).get('routers', {}).get(plain_original_id, {}).get('middlewares')
 
         if is_edit and plain_original_id and orig_cfg_file != cfg_filename:
             if agent:
@@ -4410,6 +4422,12 @@ def save_entry():
             router_entry = {'rule': rule, 'service': service_name}
             if tcp_eps:
                 router_entry['entryPoints'] = tcp_eps
+            if mws_tcp_raw is not None:
+                tcp_mws = [m.strip() for m in mws_tcp_raw.split(',') if m.strip()]
+                if tcp_mws:
+                    router_entry['middlewares'] = tcp_mws
+            elif _prev_tcp_mws:
+                router_entry['middlewares'] = _prev_tcp_mws
             if tls_passthrough:
                 router_entry['tls'] = {'passthrough': True}
             elif use_tls_tcp:
