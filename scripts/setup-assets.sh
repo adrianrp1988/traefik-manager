@@ -3,6 +3,7 @@ set -e
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 VENDOR="$REPO_ROOT/static/vendor"
+cd "$REPO_ROOT"
 
 mkdir -p "$VENDOR/monaco" "$VENDOR/fonts/inter" "$VENDOR/fonts/jetbrains-mono" "$VENDOR/phosphor" "$VENDOR/monaco-themes"
 
@@ -54,7 +55,8 @@ cp /tmp/package/files/* "$VENDOR/fonts/jetbrains-mono/"
 rm -rf /tmp/package
 
 echo "Building Tailwind CSS..."
-if ! command -v tailwindcss > /dev/null 2>&1; then
+TW_BIN="$(command -v tailwindcss || true)"
+if [ -z "$TW_BIN" ]; then
   ARCH="$(uname -m)"
   case "$ARCH" in
     x86_64)  TW_ARCH="linux-x64" ;;
@@ -63,13 +65,23 @@ if ! command -v tailwindcss > /dev/null 2>&1; then
     *)       echo "Unsupported arch: $ARCH"; exit 1 ;;
   esac
   echo "Downloading tailwindcss ($TW_ARCH)..."
-  curl -sLo /usr/local/bin/tailwindcss \
+  if [ -w /usr/local/bin ]; then
+    TW_BIN=/usr/local/bin/tailwindcss
+  else
+    TW_BIN="$(mktemp -d)/tailwindcss"
+  fi
+  curl -sLo "$TW_BIN" \
     "https://github.com/tailwindlabs/tailwindcss/releases/download/v3.4.17/tailwindcss-$TW_ARCH"
-  chmod +x /usr/local/bin/tailwindcss
+  chmod +x "$TW_BIN"
 fi
 
-tailwindcss -c "$REPO_ROOT/tailwind.config.js" \
+"$TW_BIN" -c "$REPO_ROOT/tailwind.config.js" \
   -i "$REPO_ROOT/static/css/tailwind.input.css" \
-  -o "$REPO_ROOT/static/css/tailwind.css" --minify 2>&1 | grep -v "caniuse-lite\|npx update-browserslist-db"
+  -o "$REPO_ROOT/static/css/tailwind.css" --minify
+
+if ! grep -q "\.flex{" "$REPO_ROOT/static/css/tailwind.css"; then
+  echo "ERROR: Tailwind build produced no utility classes - check that $REPO_ROOT/templates exists and is readable."
+  exit 1
+fi
 
 echo "Done."
