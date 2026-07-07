@@ -27,12 +27,21 @@
                     <input type="text" id="newMwFileName" class="input-field mt-2" placeholder="middlewares-myauth.yml" style="display:none" oninput="document.getElementById('mwConfigFile').value=this.value">
                 </div>
                 <input type="hidden" id="mwCurrentMode" value="yaml">
+                <input type="hidden" name="mwProtocol" id="mwProtocol" value="http">
+                <input type="hidden" name="originalMwProtocol" id="originalMwProtocol" value="">
+                <div>
+                    <label>Protocol</label>
+                    <div class="flex gap-1.5">
+                        <button type="button" class="proto-btn active-http" id="mwProtoHTTP" onclick="setMwProtocol('http')">HTTP</button>
+                        <button type="button" class="proto-btn" id="mwProtoTCP" onclick="setMwProtocol('tcp')">TCP</button>
+                    </div>
+                </div>
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                         <label>Name</label>
                         <input type="text" name="middlewareName" id="middlewareName" required class="input-field" placeholder="my-auth">
                     </div>
-                    <div>
+                    <div id="mwTemplateWrap">
                         <label>Template</label>
                         <select id="mwTemplate" onchange="applyMwTemplate(this)" class="input-field">
                             <option value="">Custom…</option>

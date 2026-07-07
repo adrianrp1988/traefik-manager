@@ -33,10 +33,10 @@ pip install -r requirements.txt gunicorn
 **3. Download vendor assets and build CSS**
 
 ```bash
-sudo bash scripts/setup-assets.sh
+bash scripts/setup-assets.sh
 ```
 
-This downloads Monaco, fonts, icons, and other vendored JS libraries, then compiles Tailwind CSS. These are excluded from the Git repository (they are built into the Docker image at build time). `sudo` is needed to install the `tailwindcss` binary to `/usr/local/bin` if it is not already present.
+This downloads Monaco, fonts, icons, and other vendored JS libraries, then compiles Tailwind CSS. These are excluded from the Git repository (they are built into the Docker image at build time). The script can be run from any directory and does not require `sudo` - when `/usr/local/bin` is not writable, the `tailwindcss` binary is downloaded to a temporary location instead. If the compiled CSS would contain no utility classes the script fails loudly instead of leaving a broken UI.
 
 **4. Create the data directories**
 
@@ -381,7 +381,7 @@ cd /opt/traefik-manager
 git pull
 source venv/bin/activate
 pip install -r requirements.txt gunicorn
-sudo bash scripts/setup-assets.sh
+bash scripts/setup-assets.sh
 systemctl restart traefik-manager
 ```
 

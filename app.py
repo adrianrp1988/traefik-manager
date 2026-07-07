@@ -25,7 +25,7 @@ from io import StringIO
 from cryptography.fernet import Fernet, InvalidToken
 
 GITHUB_REPO  = "chr0nzz/traefik-manager"
-APP_VERSION  = "1.6.0"
+APP_VERSION  = "1.6.1"
 
 
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
@@ -3822,7 +3822,7 @@ def _build_all_apps(include_external=True, include_internal=False):
             target  = servers[0].get('address', 'N/A') if servers else 'N/A'
             all_apps.append({'id': route_id, 'name': rname, 'rule': router.get('rule', ''),
                              'service_name': svc_name, 'target': target,
-                             'middlewares': [], 'entryPoints': router.get('entryPoints', []),
+                             'middlewares': router.get('middlewares', []), 'entryPoints': router.get('entryPoints', []),
                              'protocol': 'tcp', 'tls': bool(router.get('tls')), 'enabled': False,
                              'configFile': cf, 'provider': 'file'})
         else:
@@ -4285,6 +4285,7 @@ def save_entry():
         cert_resolver     = '' if (cert_resolver_raw in ('__none__', 'none', '__disabled__')) else (cert_resolver_raw or (resolvers[0] if resolvers else ''))
         use_tls_tcp       = request.form.get('useTls') == 'true'
         tls_passthrough   = request.form.get('tlsPassthrough') == 'true'
+        mws_tcp_raw       = request.form.get('middlewaresTcp')
         tcp_cert_raw      = (_all_resolvers[1] if len(_all_resolvers) > 1 else '').strip()
         tcp_cert_resolver = '' if (tcp_cert_raw in ('__none__', 'none')) else (tcp_cert_raw or (resolvers[0] if resolvers else ''))
         config_file_raw = request.form.get('configFile', '').strip()
@@ -4315,6 +4316,17 @@ def save_entry():
         orig_parts = original_id.split('::', 1)
         plain_original_id = orig_parts[1] if len(orig_parts) > 1 else original_id
         orig_cfg_file = orig_parts[0] if len(orig_parts) > 1 else cfg_filename
+
+        _prev_tcp_mws = None
+        if is_edit and plain_original_id:
+            _prev_src = config
+            if orig_cfg_file != cfg_filename:
+                if agent:
+                    _prev_src = _agent_load_configs(agent).get(orig_cfg_file, {})
+                else:
+                    _prev_path = _resolve_config_path(orig_cfg_file)
+                    _prev_src = load_config(_prev_path) if _prev_path else {}
+            _prev_tcp_mws = _prev_src.get('tcp', {}).get('routers', {}).get(plain_original_id, {}).get('middlewares')
 
         if is_edit and plain_original_id and orig_cfg_file != cfg_filename:
             if agent:
@@ -4410,6 +4422,12 @@ def save_entry():
             router_entry = {'rule': rule, 'service': service_name}
             if tcp_eps:
                 router_entry['entryPoints'] = tcp_eps
+            if mws_tcp_raw is not None:
+                tcp_mws = [m.strip() for m in mws_tcp_raw.split(',') if m.strip()]
+                if tcp_mws:
+                    router_entry['middlewares'] = tcp_mws
+            elif _prev_tcp_mws:
+                router_entry['middlewares'] = _prev_tcp_mws
             if tls_passthrough:
                 router_entry['tls'] = {'passthrough': True}
             elif use_tls_tcp:
@@ -4546,6 +4564,12 @@ def save_middleware():
         mw_content      = request.form.get('middlewareContent', '').strip()
         is_edit         = request.form.get('isMwEdit') == 'true'
         original_id     = request.form.get('originalMwId', '')
+        mw_protocol     = request.form.get('mwProtocol', 'http').strip().lower()
+        if mw_protocol not in ('http', 'tcp'):
+            mw_protocol = 'http'
+        original_proto  = request.form.get('originalMwProtocol', '').strip().lower()
+        if original_proto not in ('http', 'tcp'):
+            original_proto = mw_protocol
         config_file_raw = request.form.get('configFile', '').strip()
         agent_id        = request.form.get('agent_id', '').strip()
         agent           = _agent_by_id(agent_id) if agent_id else None
@@ -4574,15 +4598,27 @@ def save_middleware():
                 return jsonify({'ok': False, 'message': 'Middleware content is empty or invalid'}), 400
             flash("Middleware content is empty or invalid", "error")
             return redirect(url_for('index'))
+        if any(k in parsed_mw for k in ('http', 'tcp', 'udp')):
+            msg = 'Paste only the middleware configuration body (e.g. ipAllowList: ...), not a full http:/tcp: config block'
+            if fetch:
+                return jsonify({'ok': False, 'message': msg}), 400
+            flash(msg, "error")
+            return redirect(url_for('index'))
+        if mw_protocol == 'tcp' and not set(parsed_mw.keys()) <= {'ipAllowList', 'ipWhiteList', 'inFlightConn'}:
+            msg = 'TCP middlewares support only ipAllowList and inFlightConn'
+            if fetch:
+                return jsonify({'ok': False, 'message': msg}), 400
+            flash(msg, "error")
+            return redirect(url_for('index'))
         if agent:
             config = _agent_load_configs(agent).get(cfg_filename, {})
         else:
             create_backup(target_path)
             config = load_config(target_path)
-        config.setdefault('http', {}).setdefault('middlewares', {})
-        if is_edit and original_id and original_id != mw_name:
-            config['http']['middlewares'].pop(original_id, None)
-        config['http']['middlewares'][mw_name] = parsed_mw
+        config.setdefault(mw_protocol, {}).setdefault('middlewares', {})
+        if is_edit and original_id and (original_id != mw_name or original_proto != mw_protocol):
+            config.get(original_proto, {}).get('middlewares', {}).pop(original_id, None)
+        config[mw_protocol]['middlewares'][mw_name] = parsed_mw
         if agent:
             _agent_write_config(agent, cfg_filename, config)
         else:
@@ -4617,9 +4653,14 @@ def delete_middleware(mw_name):
             for fname, config in all_configs.items():
                 if config_file_raw and fname != config_file_raw:
                     continue
-                mws = config.get('http', {}).get('middlewares', {})
-                if mw_name in mws:
-                    mws.pop(mw_name, None)
+                found = False
+                for section in ('http', 'tcp'):
+                    mws = config.get(section, {}).get('middlewares', {})
+                    if mw_name in mws:
+                        mws.pop(mw_name, None)
+                        found = True
+                        break
+                if found:
                     _agent_write_config(agent, fname, config)
                     break
         else:
@@ -4629,9 +4670,14 @@ def delete_middleware(mw_name):
                 search_paths = CONFIG_PATHS
             for target_path in search_paths:
                 config = load_config(target_path)
-                mws = config.get('http', {}).get('middlewares', {})
-                if mw_name in mws:
-                    mws.pop(mw_name, None)
+                found = False
+                for section in ('http', 'tcp'):
+                    mws = config.get(section, {}).get('middlewares', {})
+                    if mw_name in mws:
+                        mws.pop(mw_name, None)
+                        found = True
+                        break
+                if found:
                     create_backup(target_path)
                     save_config(_strip_empty_sections(config), target_path)
                     break
@@ -5006,7 +5052,8 @@ def api_agent_routes(agent_id):
                 target = servers[0].get('address', 'N/A') if servers else 'N/A'
                 apps.append({'id': rid, 'name': rname, 'rule': router.get('rule', ''),
                              'service_name': svc_name, 'target': target,
-                             'middlewares': [], 'entryPoints': router.get('entryPoints', []),
+                             'middlewares': router.get('middlewares', []) if proto == 'tcp' else [],
+                             'entryPoints': router.get('entryPoints', []),
                              'protocol': proto, 'tls': bool(router.get('tls')) if proto == 'tcp' else False,
                              'enabled': False, 'configFile': cf, 'provider': 'file'})
 

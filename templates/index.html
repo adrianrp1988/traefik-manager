@@ -878,6 +878,7 @@ function openModal() {
     _initEntrypointChips('tcp', []);
     _initEntrypointChips('udp', []);
     _initMiddlewareChips([]);
+    _initMiddlewareChips([], 'tcp');
     setTcpTlsMode('none', document.getElementById('tcpTlsNone'));
     const crHttp = document.getElementById('certResolver');
     if (crHttp) { crHttp.value = (!_activeAgent && availableCertResolvers.length > 0) ? availableCertResolvers[0] : '__disabled__'; toggleWildcardSection(crHttp.value); }
@@ -900,6 +901,25 @@ function openModal() {
 
 function closeModal() { document.getElementById('appModal').style.display = 'none'; }
 
+function setMwProtocol(proto) {
+    const hid = document.getElementById('mwProtocol');
+    if (hid) hid.value = proto;
+    const hbtn = document.getElementById('mwProtoHTTP');
+    const tbtn = document.getElementById('mwProtoTCP');
+    if (hbtn) hbtn.classList.toggle('active-http', proto === 'http');
+    if (tbtn) tbtn.classList.toggle('active-http', proto === 'tcp');
+    const tplWrap = document.getElementById('mwTemplateWrap');
+    if (tplWrap) tplWrap.style.display = proto === 'tcp' ? 'none' : '';
+    const wizBtn = document.getElementById('mwModeWizBtn');
+    if (wizBtn) wizBtn.style.display = proto === 'tcp' ? 'none' : '';
+    if (proto === 'tcp') {
+        const tplSel = document.getElementById('mwTemplate');
+        if (tplSel) tplSel.value = '';
+        setMwMode('yaml');
+        _showMwWizard('');
+    }
+}
+
 function openMwModal() {
     const nameEl = document.getElementById('middlewareName');
     const contentEl = document.getElementById('middlewareContent');
@@ -918,6 +938,9 @@ function openMwModal() {
     _populateConfigFileSelect('mw').then(() => { modal.style.display = 'flex'; });
     const mwTplSel = document.getElementById('mwTemplate');
     if (mwTplSel) mwTplSel.value = '';
+    setMwProtocol('http');
+    const origProtoEl = document.getElementById('originalMwProtocol');
+    if (origProtoEl) origProtoEl.value = '';
     setMwMode('yaml');
     _showMwWizard('');
     _initMwMonaco('');
@@ -1227,6 +1250,7 @@ async function _populateConfigFileSelect(which) {
     const hidEl   = document.getElementById(hidId);
     if (!sel) return;
     if (newInput) { newInput.style.display = 'none'; newInput.value = ''; }
+    const onChange = isRoute ? onRouteConfigFileChange : onMwConfigFileChange;
     if (_activeAgent) {
         if (wrap) wrap.style.display = '';
         try {
@@ -1234,15 +1258,16 @@ async function _populateConfigFileSelect(which) {
             const data = await r.json();
             const files = (data.files || []).map(f => f.name).sort();
             _buildConfigSelectOptions(sel, files, true);
-            if (files.length === 1) { sel.value = files[0]; if (hidEl) hidEl.value = files[0]; }
-            else { sel.value = ''; if (hidEl) hidEl.value = ''; }
+            sel.value = files.length === 1 ? files[0] : '';
+            onChange(sel);
         } catch(e) { console.error('Failed to load agent configs', e); }
     } else {
         const show = MULTI_CONFIG || CONFIG_DIR_SET;
         if (wrap) wrap.style.display = show ? '' : 'none';
         _buildConfigSelectOptions(sel, CONFIG_PATHS_LIST.map(cp => cp.label), CONFIG_DIR_SET);
-        if (sel.options.length > 1) sel.value = sel.options[1].value;
-        if (hidEl) hidEl.value = sel.value && sel.value !== '__new__' ? sel.value : '';
+        const firstFile = [...sel.options].find(o => o.value && o.value !== '__new__');
+        sel.value = firstFile ? firstFile.value : '';
+        onChange(sel);
     }
 }
 
@@ -1955,29 +1980,34 @@ function _toggleEpChip(btn, ep, proto) {
 
 let _cachedMiddlewares = null;
 
-async function _initMiddlewareChips(selectedMiddlewares) {
-    const container = document.getElementById('middlewareChips');
-    const hidden    = document.getElementById('middlewares');
+async function _initMiddlewareChips(selectedMiddlewares, proto) {
+    proto = proto === 'tcp' ? 'tcp' : 'http';
+    const containerId = proto === 'tcp' ? 'tcpMiddlewareChips' : 'middlewareChips';
+    const hiddenId    = proto === 'tcp' ? 'middlewaresTcp' : 'middlewares';
+    const container = document.getElementById(containerId);
+    const hidden    = document.getElementById(hiddenId);
     if (!container || !hidden) return;
 
     if (!_cachedMiddlewares) {
         try {
             const res = await agentFetch('/api/traefik/middlewares');
             const data = res.ok ? (await res.json()) : {};
-            _cachedMiddlewares = (data.http || []).map(m => m.name || m).filter(m => m && (!m.includes('@') || m.endsWith('@file')));
-        } catch(e) { _cachedMiddlewares = []; }
+            const clean = arr => (arr || []).map(m => m.name || m).filter(m => m && (!m.includes('@') || m.endsWith('@file')));
+            _cachedMiddlewares = { http: clean(data.http), tcp: clean(data.tcp) };
+        } catch(e) { _cachedMiddlewares = { http: [], tcp: [] }; }
     }
+    const liveMws = _cachedMiddlewares[proto] || [];
     const configMws = (typeof _allMiddlewares !== 'undefined' ? _allMiddlewares : [])
-        .filter(m => (m.type || 'http').toLowerCase() === 'http' && m.name)
+        .filter(m => (m.type || 'http').toLowerCase() === proto && m.name)
         .map(m => m.name);
     const byBase = new Map();
-    [...(_cachedMiddlewares || []), ...configMws].forEach(full => {
+    [...liveMws, ...configMws].forEach(full => {
         const base = full.split('@')[0];
         if (!byBase.has(base)) byBase.set(base, full);
     });
     const mws = [...byBase.values()];
     if (!mws.length) {
-        container.innerHTML = `<input type="text" class="input-field" style="flex:1" placeholder="auth@file, redirect-https" oninput="document.getElementById('middlewares').value=this.value">`;
+        container.innerHTML = `<input type="text" class="input-field" style="flex:1" placeholder="${proto === 'tcp' ? 'tcp-lan-only@file' : 'auth@file, redirect-https'}" oninput="document.getElementById('${hiddenId}').value=this.value">`;
         hidden.value = selectedMiddlewares ? selectedMiddlewares.join(', ') : '';
         return;
     }
@@ -1992,7 +2022,7 @@ async function _initMiddlewareChips(selectedMiddlewares) {
         const unsel = mws.filter(mw => !selected.has(mw));
         const chip = (mw, i, on) => {
             const label = mw.split('@')[0];
-            return `<button type="button" onclick="_toggleMwChip('${_esc(mw)}')" style="padding:3px 10px;border-radius:9999px;border:1px solid ${on ? 'var(--purple)' : 'var(--border)'};background:${on ? 'rgba(163,113,247,0.15)' : 'transparent'};color:${on ? 'var(--purple)' : 'var(--muted)'};font-size:12px;font-family:monospace;cursor:pointer" title="${_esc(mw)}">${on ? (i + 1) + '. ' : ''}${_esc(label)}</button>`;
+            return `<button type="button" onclick="_toggleMwChip('${_esc(mw)}','${proto}')" style="padding:3px 10px;border-radius:9999px;border:1px solid ${on ? 'var(--purple)' : 'var(--border)'};background:${on ? 'rgba(163,113,247,0.15)' : 'transparent'};color:${on ? 'var(--purple)' : 'var(--muted)'};font-size:12px;font-family:monospace;cursor:pointer" title="${_esc(mw)}">${on ? (i + 1) + '. ' : ''}${_esc(label)}</button>`;
         };
         const divider = sel.length > 0 && unsel.length > 0
             ? `<span style="align-self:center;width:1px;height:18px;background:var(--border);margin:0 2px;flex-shrink:0"></span>`
@@ -2002,11 +2032,12 @@ async function _initMiddlewareChips(selectedMiddlewares) {
             + unsel.map(mw => chip(mw, 0, false)).join('');
     }
     render();
-    window._mwChipState = { selected, render };
+    if (!window._mwChipState || typeof window._mwChipState.render === 'function') window._mwChipState = {};
+    window._mwChipState[proto] = { selected, render };
 }
 
-function _toggleMwChip(mw) {
-    const state = window._mwChipState;
+function _toggleMwChip(mw, proto) {
+    const state = window._mwChipState && window._mwChipState[proto === 'tcp' ? 'tcp' : 'http'];
     if (!state) return;
     if (state.selected.has(mw)) state.selected.delete(mw);
     else state.selected.add(mw);
@@ -2108,6 +2139,7 @@ async function cloneRoute(btn) {
         document.getElementById('targetIpTcp').value = target[0] || '';
         document.getElementById('targetPortTcp').value = target[1] || '';
         _initEntrypointChips('tcp', app.entryPoints || []);
+        _initMiddlewareChips(app.middlewares || [], 'tcp');
         const tlsMode = app.tls ? (app.tls.passthrough ? 'passthrough' : 'tls') : 'none';
         setTcpTlsMode(tlsMode, document.getElementById(tlsMode === 'passthrough' ? 'tcpTlsPassthrough' : tlsMode === 'tls' ? 'tcpTlsTls' : 'tcpTlsNone'));
         const crTcp = document.getElementById('certResolverTcp');
@@ -2244,6 +2276,7 @@ async function handleEdit(btn) {
         document.getElementById('targetIpTcp').value = target[0] || '';
         document.getElementById('targetPortTcp').value = target[1] || '';
         _initEntrypointChips('tcp', app.entryPoints || []);
+        _initMiddlewareChips(app.middlewares || [], 'tcp');
         const tlsMode2 = app.tls ? (app.tls.passthrough ? 'passthrough' : 'tls') : 'none';
         setTcpTlsMode(tlsMode2, document.getElementById(tlsMode2 === 'passthrough' ? 'tcpTlsPassthrough' : tlsMode2 === 'tls' ? 'tcpTlsTls' : 'tcpTlsNone'));
         const crTcp = document.getElementById('certResolverTcp');
@@ -2277,6 +2310,10 @@ async function handleMwEdit(btn) {
     if (newMwInput) { newMwInput.style.display = 'none'; newMwInput.value = ''; }
     const mwTplSel2 = document.getElementById('mwTemplate');
     if (mwTplSel2) mwTplSel2.value = '';
+    const mwProto = (mw.type || 'http').toLowerCase();
+    setMwProtocol(mwProto);
+    const origProtoEl2 = document.getElementById('originalMwProtocol');
+    if (origProtoEl2) origProtoEl2.value = mwProto;
     setMwMode('yaml');
     _showMwWizard('');
     await _populateConfigFileSelect('mw');
@@ -3548,7 +3585,7 @@ function renderDetailPanel(app, protocol, liveRouter, liveService, entrypoints) 
     
     const mws = (liveRouter ? liveRouter.middlewares : app.middlewares) || [];
     let mwSection = '';
-    if (protocol === 'http') {
+    if (protocol !== 'udp') {
         if (mws.length > 0) {
             const mwHtml = `<div class="p-4 flex flex-wrap gap-2">${mws.map(m => `<span class="badge" style="background:rgba(163,113,247,0.12);color:var(--purple);border:1px solid rgba(163,113,247,0.3)">${m}</span>`).join('')}</div>`;
             mwSection = `<div class="detail-section mb-4">
@@ -4703,7 +4740,7 @@ async function csUnban(id) {
     if (!confirm(`Delete decision ${id} (unban IP)?`)) return;
     try {
         const res = await agentFetch(`/api/crowdsec/decisions/${id}`, {
-            method: 'DELETE', headers: {'X-CSRFToken': _csrfToken()}
+            method: 'DELETE'
         }).then(r => r.json());
         if (res.ok) { addNotification('success', `Decision ${id} deleted`); refreshCrowdSecTab(); }
         else addNotification('error', res.error || 'Failed to delete decision');
