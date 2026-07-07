@@ -3822,7 +3822,7 @@ def _build_all_apps(include_external=True, include_internal=False):
             target  = servers[0].get('address', 'N/A') if servers else 'N/A'
             all_apps.append({'id': route_id, 'name': rname, 'rule': router.get('rule', ''),
                              'service_name': svc_name, 'target': target,
-                             'middlewares': [], 'entryPoints': router.get('entryPoints', []),
+                             'middlewares': router.get('middlewares', []), 'entryPoints': router.get('entryPoints', []),
                              'protocol': 'tcp', 'tls': bool(router.get('tls')), 'enabled': False,
                              'configFile': cf, 'provider': 'file'})
         else:
@@ -5052,7 +5052,8 @@ def api_agent_routes(agent_id):
                 target = servers[0].get('address', 'N/A') if servers else 'N/A'
                 apps.append({'id': rid, 'name': rname, 'rule': router.get('rule', ''),
                              'service_name': svc_name, 'target': target,
-                             'middlewares': [], 'entryPoints': router.get('entryPoints', []),
+                             'middlewares': router.get('middlewares', []) if proto == 'tcp' else [],
+                             'entryPoints': router.get('entryPoints', []),
                              'protocol': proto, 'tls': bool(router.get('tls')) if proto == 'tcp' else False,
                              'enabled': False, 'configFile': cf, 'provider': 'file'})
 
